@@ -2363,14 +2363,14 @@
       try {
         const res = await fetch(`/api/kanban/boards?user_email=${encodeURIComponent(currentUserEmail)}`);
         const data = await res.json();
-        const boards = data.boards || ["Machine Learning", "Data Engineering", "Transformers"];
-        if (!boards.includes(activeTopicBoard)) {
-          activeTopicBoard = boards[0] || "Machine Learning";
+        const boards = data.boards || [];
+        if (boards.length > 0 && !boards.includes(activeTopicBoard)) {
+          activeTopicBoard = boards[0];
         }
         row.innerHTML = boards.map(b => `
           <div class="topic-pill-wrapper ${b === activeTopicBoard ? 'active' : ''}">
             <button class="topic-pill" onclick="selectTopicBoard('${escHtml(b)}')">${escHtml(b)}</button>
-            <button class="topic-delete-btn" onclick="deleteTopicBoard('${escHtml(b)}')" title="Delete board '${escHtml(b)}'">✕</button>
+            <button class="topic-delete-btn" onclick="deleteTopicBoard(event, '${escHtml(b)}')" title="Delete board '${escHtml(b)}'">✕</button>
           </div>
         `).join('');
       } catch (err) {
@@ -2384,16 +2384,17 @@
       renderTopicKanbanWorkspace();
     }
 
-    async function deleteTopicBoard(boardName) {
+    async function deleteTopicBoard(event, boardName) {
+      if (event) event.stopPropagation();
       if (!confirm(`Are you sure you want to delete the '${boardName}' topic board?`)) return;
       try {
         await fetch(`/api/kanban/boards/${encodeURIComponent(boardName)}?user_email=${encodeURIComponent(currentUserEmail)}`, {
           method: 'DELETE'
         });
         if (activeTopicBoard === boardName) {
-          activeTopicBoard = "Machine Learning";
+          activeTopicBoard = "";
         }
-        loadTopicBoards();
+        await loadTopicBoards();
         renderTopicKanbanWorkspace();
       } catch (err) {
         console.warn('Failed to delete topic board:', err);

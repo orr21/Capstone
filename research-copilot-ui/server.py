@@ -540,7 +540,7 @@ class KanbanBoardCreate(BaseModel):
 
 @app.get("/api/kanban/boards")
 def list_kanban_boards(user_email: str):
-    """List custom topic kanban boards for user."""
+    """List custom topic kanban boards for user, seeding default boards on first access."""
     try:
         conn = get_db_conn()
         cursor = conn.cursor()
@@ -549,13 +549,21 @@ def list_kanban_boards(user_email: str):
             (user_email,)
         )
         rows = cursor.fetchall()
+        if not rows:
+            default_boards = ["Machine Learning", "Data Engineering", "Transformers"]
+            for bname in default_boards:
+                cid = f"col_{uuid.uuid4().hex[:12]}"
+                cursor.execute(
+                    "INSERT INTO collections (collection_id, user_id, name) VALUES (%s, %s, %s) ON CONFLICT DO NOTHING",
+                    (cid, user_email, bname)
+                )
+            conn.commit()
+            boards = default_boards
+        else:
+            boards = [r[0] for r in rows]
+
         cursor.close()
         conn.close()
-        boards = [r[0] for r in rows]
-        if "Machine Learning" not in boards:
-            boards.insert(0, "Machine Learning")
-        if "Data Engineering" not in boards:
-            boards.append("Data Engineering")
         return {"boards": boards}
     except Exception as e:
         logger.warning("Failed to list kanban boards: %s", e)
@@ -587,7 +595,7 @@ def delete_kanban_board(board_name: str, user_email: str):
         conn = get_db_conn()
         cursor = conn.cursor()
         cursor.execute(
-            "DELETE FROM collections WHERE user_id = %s AND name = %s",
+            "DELETE FROM collections WHERE user_id = %s AND name ILIKE %s",
             (user_email, board_name)
         )
         conn.commit()

@@ -376,18 +376,39 @@ def generate_sequenced_reading_plan(user_id: str, goal_id: str = "", plan_title:
     try:
         cursor = conn.cursor()
         
+        # Resolve real goal_id or auto-create learning goal if goal_id is missing or passed as a title string
+        resolved_goal_id = None
+        target_goal_name = (goal_id or plan_title or "General Research").strip()
+
+        if goal_id:
+            cursor.execute(
+                "SELECT goal_id FROM learning_goals WHERE user_id = %s AND (goal_id = %s OR title ILIKE %s) LIMIT 1",
+                (user_id, goal_id, target_goal_name)
+            )
+            g_row = cursor.fetchone()
+            if g_row:
+                resolved_goal_id = g_row[0]
+
+        if not resolved_goal_id:
+            cursor.execute(
+                "SELECT goal_id FROM learning_goals WHERE user_id = %s AND is_active = TRUE LIMIT 1",
+                (user_id,)
+            )
+            g_row = cursor.fetchone()
+            if g_row:
+                resolved_goal_id = g_row[0]
+
+        if not resolved_goal_id:
+            resolved_goal_id = f"goal_{uuid.uuid4().hex[:12]}"
+            cursor.execute(
+                "INSERT INTO learning_goals (goal_id, user_id, title, description, is_active) VALUES (%s, %s, %s, %s, TRUE)",
+                (resolved_goal_id, user_id, target_goal_name, f"Auto-created goal for plan '{plan_title}'")
+            )
+            conn.commit()
+
         # If paper_ids is empty, automatically query matching papers from Lakebase
         if not paper_ids:
-            search_query = "research"
-            if goal_id:
-                cursor.execute(
-                    "SELECT title, description FROM learning_goals WHERE goal_id = %s OR user_id = %s LIMIT 1",
-                    (goal_id, user_id)
-                )
-                g_row = cursor.fetchone()
-                if g_row:
-                    search_query = f"{g_row[0]} {g_row[1] or ''}"
-            
+            search_query = target_goal_name
             model = get_embed_model()
             q_vec = '{' + ','.join(str(float(x)) for x in model.encode([search_query])[0]) + '}'
             cursor.execute(
@@ -415,7 +436,7 @@ def generate_sequenced_reading_plan(user_id: str, goal_id: str = "", plan_title:
             INSERT INTO reading_plans (plan_id, user_id, goal_id, title, sequenced_paper_ids, status)
             VALUES (%s, %s, %s, %s, %s::jsonb, 'ACTIVE')
         """
-        cursor.execute(sql, (plan_id, user_id, goal_id or None, plan_title, json.dumps(paper_ids)))
+        cursor.execute(sql, (plan_id, user_id, resolved_goal_id, plan_title, json.dumps(paper_ids)))
         conn.commit()
         
         # Set reading status of first paper to READING and rest to TO_READ

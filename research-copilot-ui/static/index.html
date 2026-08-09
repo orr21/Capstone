@@ -2303,32 +2303,42 @@
       
       if (trCount) trCount.textContent = toReadPapers.length;
       if (trWrapper) {
-        trWrapper.innerHTML = toReadPapers.length ? toReadPapers.map(pid => `
-          <div class="kanban-card-full">
-            <span class="card-paper-pid">[${escHtml(pid)}]</span>
-            <div class="card-paper-title">Paper ${escHtml(pid)}</div>
-            <div class="card-ai-actions">
-              <span class="card-action-chip" onclick="switchNavTab('chat'); promptTool('Tell me more about paper ${escHtml(pid)}')">💬 Ask Copilot</span>
-              <span class="card-action-chip" onclick="promptTool('Mark paper ${escHtml(pid)} as READING')">Start Reading →</span>
+        trWrapper.innerHTML = toReadPapers.length ? toReadPapers.map(pid => {
+          const cleanPid = pid.replace(/^https?:\/\/openalex\.org\//, '');
+          const paperUrl = cleanPid.startsWith('W') ? `https://openalex.org/${cleanPid}` : `#`;
+          return `
+            <div class="kanban-card-full">
+              <span class="card-paper-pid">[${escHtml(cleanPid)}]</span>
+              <div class="card-paper-title">Paper ${escHtml(cleanPid)}</div>
+              <div class="card-ai-actions">
+                <a href="${paperUrl}" target="_blank" rel="noopener noreferrer" class="card-action-chip" style="text-decoration:none">Read Paper ↗</a>
+                <span class="card-action-chip" onclick="promptTool('Mark paper ${escHtml(cleanPid)} as READING')">Start Reading →</span>
+              </div>
             </div>
-          </div>
-        `).join('') : `<div class="inspector-empty">No papers in queue</div>`;
+          `;
+        }).join('') : `<div class="inspector-empty">No papers in queue</div>`;
       }
 
       // 2. Currently Reading cards
       let readingPaper = dash.recommended_paper;
       if (rdCount) rdCount.textContent = readingPaper ? 1 : 0;
       if (rdWrapper) {
-        rdWrapper.innerHTML = readingPaper ? `
-          <div class="kanban-card-full">
-            <span class="card-paper-pid">[${escHtml(readingPaper.paper_id)}]</span>
-            <div class="card-paper-title">${escHtml(readingPaper.title)}</div>
-            <div class="card-ai-actions">
-              <span class="card-action-chip" onclick="switchNavTab('chat'); promptTool('Tell me more about paper ${escHtml(readingPaper.paper_id)}')">💬 Ask Copilot</span>
-              <span class="card-action-chip" onclick="promptTool('Generate a quiz for paper ${escHtml(readingPaper.paper_id)}')">📝 Take AI Quiz 🏆</span>
+        if (readingPaper) {
+          const cleanPid = readingPaper.paper_id.replace(/^https?:\/\/openalex\.org\//, '');
+          const paperUrl = cleanPid.startsWith('W') ? `https://openalex.org/${cleanPid}` : `#`;
+          rdWrapper.innerHTML = `
+            <div class="kanban-card-full">
+              <span class="card-paper-pid">[${escHtml(cleanPid)}]</span>
+              <div class="card-paper-title">${escHtml(readingPaper.title)}</div>
+              <div class="card-ai-actions">
+                <a href="${paperUrl}" target="_blank" rel="noopener noreferrer" class="card-action-chip" style="text-decoration:none">Read Paper ↗</a>
+                <span class="card-action-chip" onclick="promptTool('Generate a quiz for paper ${escHtml(cleanPid)}')">Take Quiz</span>
+              </div>
             </div>
-          </div>
-        ` : `<div class="inspector-empty">No active paper being read</div>`;
+          `;
+        } else {
+          rdWrapper.innerHTML = `<div class="inspector-empty">No active paper being read</div>`;
+        }
       }
 
       // 3. Mastered cards
@@ -2766,8 +2776,10 @@
 
     function renderCitationLinks(html) {
       if (!html) return html;
-      return html.replace(/\[(W\d+|paper_[a-zA-Z0-9_-]+)\]/g, (match, pid) => {
-        return `<span class="paper-citation-tag" onclick="promptTool('Tell me more about paper ${pid}')" title="Click to view details for ${pid}">📄 ${pid}</span>`;
+      return html.replace(/\[(W\d+|https?:\/\/openalex\.org\/W\d+|paper_[a-zA-Z0-9_-]+)\]/g, (match, pid) => {
+        const cleanPid = pid.replace(/^https?:\/\/openalex\.org\//, '');
+        const paperUrl = cleanPid.startsWith('W') ? `https://openalex.org/${cleanPid}` : `#`;
+        return `<a href="${paperUrl}" target="_blank" rel="noopener noreferrer" class="paper-citation-tag" title="Read paper ${cleanPid} on OpenAlex">Read ${cleanPid} ↗</a>`;
       });
     }
 

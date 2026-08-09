@@ -297,6 +297,104 @@
       color: var(--semantic-error) !important;
     }
 
+    /* ── Kanban Workspace Layout with Sidepanel ──────────────────────────── */
+    .kanban-workspace-layout {
+      display: flex;
+      gap: var(--sp-lg);
+      flex: 1;
+      min-height: 0;
+    }
+
+    .kanban-board-main-area {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: var(--sp-md);
+      min-width: 0;
+    }
+
+    .kanban-chat-sidepanel {
+      width: 320px;
+      background: var(--canvas-soft);
+      border: 1px solid var(--hairline-strong);
+      border-radius: var(--r-xl);
+      display: flex;
+      flex-direction: column;
+      flex-shrink: 0;
+      overflow: hidden;
+    }
+
+    .sidepanel-header {
+      padding: var(--sp-base);
+      border-bottom: 1px solid var(--hairline);
+      background: var(--surface-card);
+    }
+
+    .sidepanel-title {
+      font-family: var(--font-display);
+      font-size: 16px;
+      font-weight: 300;
+      color: var(--ink);
+    }
+
+    .sidepanel-sub {
+      font-size: 11px;
+      color: var(--muted);
+      margin-top: 2px;
+      line-height: 1.35;
+    }
+
+    .sidepanel-messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: var(--sp-sm);
+      display: flex;
+      flex-direction: column;
+      gap: var(--sp-xs);
+    }
+
+    .sidepanel-composer {
+      padding: var(--sp-xs) var(--sp-sm) var(--sp-sm);
+      background: var(--surface-card);
+      border-top: 1px solid var(--hairline);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .sidepanel-input {
+      flex: 1;
+      border: 1px solid var(--hairline-strong);
+      border-radius: var(--r-pill);
+      padding: 6px 12px;
+      font-size: 12px;
+      font-family: var(--font-body);
+      outline: none;
+      background: var(--canvas);
+      color: var(--ink);
+      resize: none;
+    }
+
+    .sidepanel-input:focus {
+      border-color: var(--ink);
+    }
+
+    .sidepanel-send-btn {
+      width: 28px; height: 28px;
+      border-radius: var(--r-pill);
+      background: var(--ink);
+      color: var(--on-primary);
+      border: none;
+      display: flex; align-items: center; justify-content: center;
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+
+    .sidepanel-send-btn svg {
+      width: 12px; height: 12px;
+      fill: var(--on-primary);
+    }
+
     .topic-pill:hover {
       border-color: var(--ink);
     }
@@ -2003,43 +2101,74 @@
 
   <!-- Full-screen Kanban Workspace View -->
   <div class="kanban-workspace-view" id="kanban-workspace-view">
-    <div class="topic-bar-header">
-      <div class="topic-pills-row" id="topic-pills-row">
-        <!-- Dynamically rendered topic pills with delete CRUD -->
-      </div>
-      <button class="add-topic-btn" onclick="promptNewTopicBoard()">+ Add Topic Board</button>
-    </div>
+    <div class="kanban-workspace-layout">
+      <!-- Main Kanban Board Section -->
+      <div class="kanban-board-main-area">
+        <div class="topic-bar-header">
+          <div class="topic-pills-row" id="topic-pills-row">
+            <!-- Dynamically rendered topic pills with delete CRUD -->
+          </div>
+          <button class="add-topic-btn" onclick="promptNewTopicBoard()">+ Add Topic Board</button>
+        </div>
 
-    <div class="kanban-columns-grid">
-      <div class="kanban-main-col">
-        <div class="kanban-main-col-title">
-          <span>To Read</span>
-          <span class="col-count-badge" id="kw-count-to-read">0</span>
-        </div>
-        <div class="kanban-cards-wrapper" id="kw-cards-to-read">
-          <!-- Cards -->
+        <div class="kanban-columns-grid">
+          <div class="kanban-main-col">
+            <div class="kanban-main-col-title">
+              <span>To Read</span>
+              <span class="col-count-badge" id="kw-count-to-read">0</span>
+            </div>
+            <div class="kanban-cards-wrapper" id="kw-cards-to-read">
+              <!-- Cards -->
+            </div>
+          </div>
+
+          <div class="kanban-main-col">
+            <div class="kanban-main-col-title">
+              <span>Currently Reading</span>
+              <span class="col-count-badge" id="kw-count-reading">0</span>
+            </div>
+            <div class="kanban-cards-wrapper" id="kw-cards-reading">
+              <!-- Cards -->
+            </div>
+          </div>
+
+          <div class="kanban-main-col">
+            <div class="kanban-main-col-title">
+              <span>Mastered</span>
+              <span class="col-count-badge" id="kw-count-mastered">0</span>
+            </div>
+            <div class="kanban-cards-wrapper" id="kw-cards-mastered">
+              <!-- Cards -->
+            </div>
+          </div>
         </div>
       </div>
 
-      <div class="kanban-main-col">
-        <div class="kanban-main-col-title">
-          <span>Currently Reading</span>
-          <span class="col-count-badge" id="kw-count-reading">0</span>
+      <!-- Reading Assistant Sidepanel Chat -->
+      <aside class="kanban-chat-sidepanel">
+        <div class="sidepanel-header">
+          <div class="sidepanel-title">Reading Assistant</div>
+          <p class="sidepanel-sub">Ask doubts about papers or tell Copilot to move cards across columns</p>
         </div>
-        <div class="kanban-cards-wrapper" id="kw-cards-reading">
-          <!-- Cards -->
-        </div>
-      </div>
 
-      <div class="kanban-main-col">
-        <div class="kanban-main-col-title">
-          <span>Mastered</span>
-          <span class="col-count-badge" id="kw-count-mastered">0</span>
+        <div class="sidepanel-messages" id="kanban-chat-messages">
+          <div class="msg-row ai">
+            <div class="msg-avatar ai">RC</div>
+            <div class="msg-bubble ai">
+              <p>Hi! I am your Reading Assistant. Ask me any doubts about your papers or tell me to move papers across your Kanban board!</p>
+            </div>
+          </div>
         </div>
-        <div class="kanban-cards-wrapper" id="kw-cards-mastered">
-          <!-- Cards -->
+
+        <div class="sidepanel-composer">
+          <textarea id="kanban-chat-input" class="sidepanel-input" placeholder="Ask a doubt or e.g. 'Move W7172556967 to Reading'..." rows="1" onkeydown="handleKanbanChatKeyDown(event)"></textarea>
+          <button class="sidepanel-send-btn" onclick="sendKanbanChatMessage()" aria-label="Send message">
+            <svg viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg">
+              <path d="M2.5 13.5 L13.5 8 L2.5 2.5 L4.5 8 Z"/>
+            </svg>
+          </button>
         </div>
-      </div>
+      </aside>
     </div>
   </div>
 
@@ -2932,6 +3061,56 @@
         sendBtn.disabled = false;
         loadDashboard();
         input.focus();
+      }
+    }
+
+    /* ── Kanban Sidepanel Chat Handlers ──────────────────────────────────── */
+    function handleKanbanChatKeyDown(event) {
+      if (event.key === 'Enter' && !event.shiftKey) {
+        event.preventDefault();
+        sendKanbanChatMessage();
+      }
+    }
+
+    async function sendKanbanChatMessage() {
+      const input = document.getElementById('kanban-chat-input');
+      const text = input ? input.value.trim() : '';
+      if (!text || isStreaming) return;
+
+      input.value = '';
+      
+      const sidepanelContainer = document.getElementById('kanban-chat-messages');
+      if (sidepanelContainer) {
+        const uRow = document.createElement('div');
+        uRow.className = 'msg-row user';
+        uRow.innerHTML = `<div class="msg-bubble user">${escHtml(text)}</div>`;
+        sidepanelContainer.appendChild(uRow);
+
+        const aRow = document.createElement('div');
+        aRow.className = 'msg-row ai';
+        aRow.innerHTML = `
+          <div class="msg-avatar ai">RC</div>
+          <div class="msg-bubble ai"><span class="status-pulse"></span> Thinking…</div>
+        `;
+        sidepanelContainer.appendChild(aRow);
+        sidepanelContainer.scrollTop = sidepanelContainer.scrollHeight;
+      }
+
+      // Sync text to main chat input & trigger sendMessage
+      document.getElementById('chat-input').value = text;
+      await sendMessage();
+
+      // Sync latest assistant message into sidepanel UI
+      if (sidepanelContainer && messageHistory.length > 0) {
+        const lastMsg = messageHistory[messageHistory.length - 1];
+        if (lastMsg.role === 'assistant') {
+          const aiBubbles = sidepanelContainer.querySelectorAll('.msg-bubble.ai');
+          if (aiBubbles.length) {
+            const lastBubble = aiBubbles[aiBubbles.length - 1];
+            lastBubble.innerHTML = renderCitationLinks(marked.parse(lastMsg.content));
+            sidepanelContainer.scrollTop = sidepanelContainer.scrollHeight;
+          }
+        }
       }
     }
   </script>

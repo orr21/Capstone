@@ -1738,6 +1738,15 @@
     </a>
 
     <div class="nav-right">
+      <div class="nav-tabs">
+        <button class="nav-tab-btn active" id="tab-btn-chat" onclick="switchNavTab('chat')">
+          💬 Research Chat
+        </button>
+        <button class="nav-tab-btn" id="tab-btn-kanban" onclick="switchNavTab('kanban')">
+          📋 Kanban Workspace
+        </button>
+      </div>
+
       <button class="tools-trigger-btn" onclick="toggleToolsModal(true)" aria-label="View available tools">
         <span>🛠️ Tools</span>
         <span class="tools-count-badge" id="tools-count">...</span>

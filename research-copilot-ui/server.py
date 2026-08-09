@@ -176,6 +176,10 @@ class MultiMCPRegistry:
             raise ValueError(f"Unknown tool: {namespaced_name}")
 
         namespace, original_tool_name = tool_router[namespaced_name]
+        
+        # Pre-hook: Validate tool input guardrails before execution
+        _validate_tool_call_guardrails(original_tool_name, args)
+
         url = self.servers[namespace]
         auth = self._make_auth(bearer_token)
 
@@ -278,6 +282,131 @@ def get_conversation_messages(conversation_id: str):
     except Exception as e:
         logger.warning("Failed to get messages: %s", e)
         return []
+
+@app.get("/api/dashboard")
+def get_user_dashboard(user_email: str):
+    """Retrieve active reading plan, recommendations, reading progress, and gamification badges for user."""
+    try:
+        conn = get_db_conn()
+        cursor = conn.cursor()
+
+        # 1. Fetch active reading plan
+        cursor.execute(
+            "SELECT plan_id, title, sequenced_paper_ids, created_at FROM reading_plans WHERE user_id = %s AND status = 'ACTIVE' ORDER BY created_at DESC LIMIT 1",
+            (user_email,)
+        )
+        plan_row = cursor.fetchone()
+        active_plan = None
+        plan_paper_ids = []
+        if plan_row:
+            plan_paper_ids = plan_row[2] if isinstance(plan_row[2], list) else json.loads(plan_row[2] or "[]")
+            active_plan = {
+                "plan_id": plan_row[0],
+                "title": plan_row[1],
+                "paper_ids": plan_paper_ids,
+                "created_at": plan_row[3].isoformat() if plan_row[3] else ""
+            }
+
+        # 2. Fetch reading progress counts & details
+        cursor.execute(
+            "SELECT rp.paper_id, p.title, rp.status FROM reading_progress rp JOIN papers p ON rp.paper_id = p.paper_id WHERE rp.user_id = %s",
+            (user_email,)
+        )
+        prog_rows = cursor.fetchall()
+        
+        completed = [r for r in prog_rows if r[2] == 'COMPLETED']
+        reading = [r for r in prog_rows if r[2] == 'READING']
+        to_read = [r for r in prog_rows if r[2] == 'TO_READ']
+
+        # 3. Fetch count of user notes
+        cursor.execute("SELECT COUNT(*) FROM notes WHERE user_id = %s", (user_email,))
+        notes_count = cursor.fetchone()[0]
+
+        # 4. Next Recommended Paper
+        recommended_paper = None
+        if reading:
+            recommended_paper = {"paper_id": reading[0][0], "title": reading[0][1], "status": "READING", "reason": "Currently in progress"}
+        elif to_read:
+            recommended_paper = {"paper_id": to_read[0][0], "title": to_read[0][1], "status": "TO_READ", "reason": "Next in queue"}
+        elif plan_paper_ids:
+            cursor.execute("SELECT paper_id, title, abstract_text FROM papers WHERE paper_id = %s LIMIT 1", (plan_paper_ids[0],))
+            p_row = cursor.fetchone()
+            if p_row:
+                recommended_paper = {"paper_id": p_row[0], "title": p_row[1], "status": "PLAN_NEXT", "reason": f"First in active plan '{active_plan['title']}'"}
+
+        cursor.close()
+        conn.close()
+
+        # 5. Gamification Ranks & Badges calculation
+        num_completed = len(completed)
+        if num_completed >= 10:
+            level_name = "Level 4 — Research Master 🎓"
+        elif num_completed >= 5:
+            level_name = "Level 3 — Literature Scholar 📜"
+        elif num_completed >= 2:
+            level_name = "Level 2 — Paper Pathfinder 🧭"
+        else:
+            level_name = "Level 1 — Knowledge Explorer 🌱"
+
+        badges = []
+        if num_completed >= 1:
+            badges.append({"id": "first_paper", "title": "First Steps", "icon": "🏁", "desc": "Completed first paper"})
+        if num_completed >= 3:
+            badges.append({"id": "streak_3", "title": "Reading Streak", "icon": "🔥", "desc": "Completed 3 papers"})
+        if num_completed >= 5:
+            badges.append({"id": "scholar_5", "title": "Scholar", "icon": "🏆", "desc": "Completed 5 papers"})
+        if notes_count >= 1:
+            badges.append({"id": "note_taker", "title": "Note Taker", "icon": "✍️", "desc": "Saved study notes"})
+
+        return {
+            "user_email": user_email,
+            "active_plan": active_plan,
+            "recommended_paper": recommended_paper,
+            "stats": {
+                "completed": num_completed,
+                "reading": len(reading),
+                "to_read": len(to_read),
+                "notes": notes_count
+            },
+            "gamification": {
+                "level": level_name,
+                "completed_count": num_completed,
+                "badges": badges
+            }
+        }
+    except Exception as e:
+        logger.warning("Failed to fetch dashboard: %s", e)
+        return {
+            "user_email": user_email,
+            "active_plan": None,
+            "recommended_paper": None,
+            "stats": {"completed": 0, "reading": 0, "to_read": 0, "notes": 0},
+            "gamification": {"level": "Level 1 — Knowledge Explorer 🌱", "completed_count": 0, "badges": []}
+        }
+
+def _validate_tool_call_guardrails(tool_name: str, args: dict):
+    """Input Guardrail Pre-hook: Validates parameter safety and type contracts before MCP tool execution."""
+    if not isinstance(args, dict):
+        raise ValueError("Guardrail Violation: Tool arguments must be a dictionary object.")
+    
+    if tool_name == "search_research_papers":
+        query = str(args.get("query", "")).strip()
+        if not query:
+            raise ValueError("Guardrail Violation: Search query string cannot be empty.")
+        top_k = args.get("top_k", 5)
+        if isinstance(top_k, int) and (top_k < 1 or top_k > 20):
+            args["top_k"] = max(1, min(top_k, 20))
+            
+    elif tool_name == "update_reading_progress":
+        status = str(args.get("status", "")).upper()
+        if status not in ["TO_READ", "READING", "COMPLETED"]:
+            raise ValueError(f"Guardrail Violation: Invalid reading status '{status}'. Must be TO_READ, READING, or COMPLETED.")
+        args["status"] = status
+        
+    elif tool_name == "save_paper_note":
+        content = str(args.get("note_content", "")).strip()
+        if not content:
+            raise ValueError("Guardrail Violation: Note content cannot be empty.")
 
 @app.delete("/api/conversations/{conversation_id}")
 def delete_conversation(conversation_id: str):

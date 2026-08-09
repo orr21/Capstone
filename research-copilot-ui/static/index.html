@@ -437,6 +437,214 @@
     }
 
     .sidebar {
+      width: 250px;
+      background: var(--canvas-soft);
+      border-right: 1px solid var(--hairline-strong);
+      display: flex;
+      flex-direction: column;
+      flex-shrink: 0;
+      transition: transform 0.25s ease;
+    }
+
+    /* ── Right Inspector Panel ──────────────────────────────────────────────── */
+    .right-inspector {
+      width: 320px;
+      background: var(--canvas-soft);
+      border-left: 1px solid var(--hairline-strong);
+      display: flex;
+      flex-direction: column;
+      gap: var(--sp-md);
+      padding: var(--sp-base);
+      overflow-y: auto;
+      flex-shrink: 0;
+    }
+
+    .inspector-section {
+      display: flex;
+      flex-direction: column;
+      gap: var(--sp-xs);
+    }
+
+    .inspector-title {
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 0.6px;
+      text-transform: uppercase;
+      color: var(--muted);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .inspector-badge {
+      font-size: 10px;
+      font-weight: 600;
+      background: var(--surface-strong);
+      color: var(--ink);
+      padding: 2px 6px;
+      border-radius: var(--r-xs);
+      border: 1px solid var(--hairline);
+    }
+
+    .inspector-card {
+      background: var(--surface-card);
+      border: 1px solid var(--hairline);
+      border-radius: var(--r-lg);
+      padding: var(--sp-base);
+      display: flex;
+      flex-direction: column;
+      gap: var(--sp-xs);
+      box-shadow: 0 2px 8px rgba(0,0,0,0.02);
+    }
+
+    .inspector-empty {
+      font-size: 12px;
+      color: var(--muted-soft);
+      font-style: italic;
+    }
+
+    .plan-title-text {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--ink);
+    }
+
+    .plan-seq-list {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      margin-top: 4px;
+    }
+
+    .plan-seq-item {
+      font-size: 12px;
+      color: var(--ink-secondary);
+      background: var(--canvas);
+      padding: 4px 8px;
+      border-radius: var(--r-xs);
+      font-family: 'Courier New', monospace;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .rec-paper-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--ink);
+      line-height: 1.35;
+    }
+
+    .rec-paper-reason {
+      font-size: 11px;
+      color: var(--muted);
+    }
+
+    .rec-action-btn {
+      align-self: flex-start;
+      margin-top: 4px;
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--on-primary);
+      background: var(--ink);
+      border: none;
+      border-radius: var(--r-pill);
+      padding: 4px 10px;
+      cursor: pointer;
+      transition: opacity 0.15s ease;
+    }
+
+    .rec-action-btn:hover { opacity: 0.88; }
+
+    .user-rank-pill {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--ink);
+      background: var(--surface-strong);
+      padding: 6px 10px;
+      border-radius: var(--r-md);
+      text-align: center;
+      border: 1px solid var(--hairline);
+    }
+
+    .stats-counter-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 4px;
+      margin-top: 6px;
+    }
+
+    .stat-box {
+      background: var(--canvas);
+      border-radius: var(--r-sm);
+      padding: 6px 4px;
+      text-align: center;
+    }
+
+    .stat-num {
+      display: block;
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--ink);
+    }
+
+    .stat-lbl {
+      display: block;
+      font-size: 9px;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+      color: var(--muted);
+    }
+
+    .badges-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 6px;
+    }
+
+    .badge-chip {
+      font-size: 11px;
+      background: var(--canvas);
+      border: 1px solid var(--hairline);
+      border-radius: var(--r-pill);
+      padding: 3px 8px;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      color: var(--ink);
+    }
+
+    .guardrails-card {
+      background: #f0fdf4;
+      border-color: rgba(22, 163, 74, 0.25);
+    }
+
+    .guardrails-header {
+      font-size: 12px;
+      font-weight: 600;
+      color: #15803d;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .guardrails-status-dot {
+      font-size: 10px;
+      background: #dcfce7;
+      color: #166534;
+      padding: 1px 6px;
+      border-radius: var(--r-xs);
+      font-weight: 600;
+    }
+
+    .guardrails-desc {
+      font-size: 11px;
+      color: #166534;
+      line-height: 1.35;
+    }
+
+    .sidebar {
       width: 260px;
       background: var(--canvas-soft);
       border-right: 1px solid var(--hairline-strong);
@@ -1248,13 +1456,13 @@
             Search transformer architecture papers
           </button>
           <button class="suggestion-pill" role="listitem" onclick="useSuggestion(this)">
-            How many papers from 2023?
+            Find papers for my Machine Learning goal
           </button>
           <button class="suggestion-pill" role="listitem" onclick="useSuggestion(this)">
-            Save a note on attention mechanisms
+            Compare the top 2 papers in Lakebase
           </button>
           <button class="suggestion-pill" role="listitem" onclick="useSuggestion(this)">
-            Mark a paper as completed
+            What paper should I read next based on my progress?
           </button>
         </div>
       </div>
@@ -1288,6 +1496,58 @@
       </div>
       <p class="composer-hint">Powered by Databricks Lakebase · MLflow tracing enabled</p>
     </div>
+
+  </main>
+
+  <!-- Right Inspector / Workspace Panel -->
+  <aside class="right-inspector" id="right-inspector">
+    <div class="inspector-section">
+      <div class="inspector-title">
+        <span>🎯 Active Reading Plan</span>
+        <span class="inspector-badge" id="plan-badge">ACTIVE</span>
+      </div>
+      <div id="inspector-plan-body" class="inspector-card">
+        <div class="inspector-empty">No active reading plan. Ask the Copilot to create one!</div>
+      </div>
+    </div>
+
+    <div class="inspector-section">
+      <div class="inspector-title">
+        <span>💡 Next Recommendation</span>
+      </div>
+      <div id="inspector-rec-body" class="inspector-card">
+        <div class="inspector-empty">No pending recommendations</div>
+      </div>
+    </div>
+
+    <div class="inspector-section">
+      <div class="inspector-title">
+        <span>🏆 Achievements & Ranks</span>
+      </div>
+      <div id="inspector-gamification-body" class="inspector-card">
+        <div class="user-rank-pill" id="user-level-badge">Level 1 — Knowledge Explorer 🌱</div>
+        <div class="stats-counter-grid">
+          <div class="stat-box"><span class="stat-num" id="stat-completed">0</span><span class="stat-lbl">Read</span></div>
+          <div class="stat-box"><span class="stat-num" id="stat-reading">0</span><span class="stat-lbl">Reading</span></div>
+          <div class="stat-box"><span class="stat-num" id="stat-to-read">0</span><span class="stat-lbl">Queued</span></div>
+          <div class="stat-box"><span class="stat-num" id="stat-notes">0</span><span class="stat-lbl">Notes</span></div>
+        </div>
+        <div class="badges-row" id="badges-row">
+          <!-- Badges -->
+        </div>
+      </div>
+    </div>
+
+    <div class="inspector-section">
+      <div class="inspector-card guardrails-card">
+        <div class="guardrails-header">
+          <span>🛡️ Safety & Guardrails</span>
+          <span class="guardrails-status-dot">Active</span>
+        </div>
+        <p class="guardrails-desc">Parameter validation pre-hooks and type contracts enforced before tool calls.</p>
+      </div>
+    </div>
+  </aside>
 
   </div> <!-- End .app-viewport -->
 
@@ -1369,13 +1629,80 @@
       // Fetch tools list
       loadTools();
 
-      // Fetch user conversations
+      // Fetch user conversations & dashboard
       loadConversations();
+      loadDashboard();
 
       // Auto-resize textarea on every input
       const input = document.getElementById('chat-input');
       input.addEventListener('input', () => autoResize(input));
     });
+
+    /* ── Live Dashboard & Right Inspector ─────────────────────────────────── */
+    async function loadDashboard() {
+      try {
+        const res = await fetch(`/api/dashboard?user_email=${encodeURIComponent(currentUserEmail)}`);
+        const data = await res.json();
+        
+        // 1. Active Plan
+        const planContainer = document.getElementById('inspector-plan-body');
+        const planBadge     = document.getElementById('plan-badge');
+        if (data.active_plan && data.active_plan.paper_ids && data.active_plan.paper_ids.length > 0) {
+          if (planBadge) planBadge.textContent = 'ACTIVE';
+          let itemsHtml = data.active_plan.paper_ids.map((pid, idx) => `
+            <div class="plan-seq-item">${idx + 1}. [${escHtml(pid)}]</div>
+          `).join('');
+          planContainer.innerHTML = `
+            <div class="plan-title-text">🎯 ${escHtml(data.active_plan.title)}</div>
+            <div class="plan-seq-list">${itemsHtml}</div>
+          `;
+        } else {
+          if (planBadge) planBadge.textContent = 'NONE';
+          planContainer.innerHTML = `<div class="inspector-empty">No active reading plan. Ask Copilot to generate one!</div>`;
+        }
+
+        // 2. Next Recommendation
+        const recContainer = document.getElementById('inspector-rec-body');
+        if (data.recommended_paper) {
+          const rec = data.recommended_paper;
+          recContainer.innerHTML = `
+            <div class="rec-paper-title">📖 [${escHtml(rec.paper_id)}] ${escHtml(rec.title)}</div>
+            <div class="rec-paper-reason">Reason: ${escHtml(rec.reason)}</div>
+            <button class="rec-action-btn" onclick="promptTool('Mark paper ${escHtml(rec.paper_id)} as COMPLETED')">Mark Completed ✓</button>
+          `;
+        } else {
+          recContainer.innerHTML = `<div class="inspector-empty">No pending paper recommendations</div>`;
+        }
+
+        // 3. Stats & Gamification
+        const levelBadge = document.getElementById('user-level-badge');
+        if (levelBadge && data.gamification) {
+          levelBadge.textContent = data.gamification.level;
+        }
+
+        document.getElementById('stat-completed').textContent = data.stats.completed || 0;
+        document.getElementById('stat-reading').textContent   = data.stats.reading || 0;
+        document.getElementById('stat-to-read').textContent   = data.stats.to_read || 0;
+        document.getElementById('stat-notes').textContent     = data.stats.notes || 0;
+
+        // 4. Badges
+        const badgesRow = document.getElementById('badges-row');
+        if (badgesRow) {
+          if (!data.gamification.badges || data.gamification.badges.length === 0) {
+            badgesRow.innerHTML = `<span class="inspector-empty">Complete papers to unlock research badges!</span>`;
+          } else {
+            badgesRow.innerHTML = data.gamification.badges.map(b => `
+              <div class="badge-chip" title="${escHtml(b.desc)}">
+                <span>${b.icon}</span>
+                <span>${escHtml(b.title)}</span>
+              </div>
+            `).join('');
+          }
+        }
+      } catch (err) {
+        console.warn('Failed to load dashboard:', err);
+      }
+    }
 
     /* ── User Profile & Login Functions ──────────────────────────────────── */
     function updateUserProfileUI() {
@@ -1400,9 +1727,10 @@
       updateUserProfileUI();
       toggleUserModal(false);
       
-      // Reload conversations for new profile
+      // Reload conversations & dashboard for new profile
       activeConversationId = null;
       loadConversations();
+      loadDashboard();
       resetChatArea();
     }
 
@@ -1879,6 +2207,7 @@
       } finally {
         isStreaming = false;
         sendBtn.disabled = false;
+        loadDashboard();
         input.focus();
       }
     }

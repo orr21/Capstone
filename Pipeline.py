@@ -1,3 +1,9 @@
+# Databricks notebook source
+# MAGIC %pip install -q sentence-transformers
+# MAGIC dbutils.library.restartPython()
+
+# COMMAND ----------
+
 import os
 import time
 import requests
@@ -13,7 +19,7 @@ from sentence_transformers import SentenceTransformer
 DB_HOST  = os.environ.get("DB_HOST", "ep-withered-breeze-d8845p1k.database.us-east-2.cloud.databricks.com")
 DB_NAME  = os.environ.get("DB_NAME", "databricks_postgres")
 DB_USER  = os.environ.get("DB_USER", "research-copilot-agent")
-DB_PASS  = os.environ.get("DB_PASS", "npg_oG8qxChTtIz3")
+DB_PASS  = os.environ.get("DB_PASS", "")
 
 MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
 
@@ -157,7 +163,7 @@ def parse_papers(raw_papers: list, topic_label=None) -> list:
 def parse_authors(raw_papers: list) -> tuple:
     """Extract author tuples and paper-author junction tuples from raw OpenAlex records."""
     authors_dict = {}  # author_id -> (author_id, display_name, orcid, institution_name)
-    paper_authors_list = []  # (paper_id, author_id, author_position)
+    paper_authors_dict = {}  # (paper_id, author_id) -> (paper_id, author_id, author_position)
 
     for p in raw_papers:
         paper_id = str(p.get("id"))
@@ -175,9 +181,13 @@ def parse_authors(raw_papers: list) -> tuple:
             institution_name = (institutions[0].get("display_name") or "").strip() if institutions else ""
 
             authors_dict[author_id] = (author_id, display_name, orcid, institution_name)
-            paper_authors_list.append((paper_id, author_id, idx + 1))
 
-    return list(authors_dict.values()), paper_authors_list
+            # Deduplicate intra-batch (paper_id, author_id) to avoid ON CONFLICT DO UPDATE batch collisions
+            key = (paper_id, author_id)
+            if key not in paper_authors_dict:
+                paper_authors_dict[key] = (paper_id, author_id, idx + 1)
+
+    return list(authors_dict.values()), list(paper_authors_dict.values())
 
 
 def ingest_papers(parsed_records: list):

@@ -77,14 +77,11 @@ def get_workspace_client():
     return _w
 
 def get_openai_client():
-    global _openai_client
-    if _openai_client is None:
-        w = get_workspace_client()
-        headers = w.config.authenticate()
-        token = headers.get("Authorization", "").replace("Bearer ", "")
-        host = w.config.host.rstrip("/")
-        _openai_client = OpenAI(api_key=token, base_url=f"{host}/serving-endpoints")
-    return _openai_client
+    w = get_workspace_client()
+    headers = w.config.authenticate()
+    token = headers.get("Authorization", "").replace("Bearer ", "")
+    host = w.config.host.rstrip("/")
+    return OpenAI(api_key=token, base_url=f"{host}/serving-endpoints")
 
 def _resolve_bearer_token(forwarded_token: str = "") -> str:
     """Resolve the best available bearer token for calling other Databricks Apps.
@@ -212,37 +209,49 @@ def read_config():
 
 @app.post("/api/chat/stream")
 async def chat_stream_endpoint(req: ChatRequest, request: Request):
-    user_email = request.headers.get("x-forwarded-user", "demo_user@workspace.com")
+    try:
+        user_email = request.headers.get("x-forwarded-user", "demo_user@workspace.com")
 
-    # X-Forwarded-Access-Token is injected by Databricks Apps on every
-    # authenticated request — it's the user's own OAuth token and is the
-    # most reliable credential for calling other Databricks Apps.
-    forwarded_token = request.headers.get("x-forwarded-access-token", "")
-    bearer_token = _resolve_bearer_token(forwarded_token)
-    if not bearer_token:
-        logger.warning("No bearer token resolved; MCP calls will likely fail with 401")
+        # X-Forwarded-Access-Token is injected by Databricks Apps on every
+        # authenticated request — it's the user's own OAuth token and is the
+        # most reliable credential for calling other Databricks Apps.
+        forwarded_token = request.headers.get("x-forwarded-access-token", "")
+        bearer_token = _resolve_bearer_token(forwarded_token)
+        if not bearer_token:
+            logger.warning("No bearer token resolved; MCP calls will likely fail with 401")
 
-    openai_client = get_openai_client()
+        openai_client = get_openai_client()
 
-    messages_payload = [
-        {
-            "role": "system",
-            "content": (
-                f"You are Research Copilot assisting {user_email}. "
-                "You have access to tools defined in the 'tools' parameter of this request. "
-                "To retrieve database metrics, papers, notes, or reading progress, call the "
-                "appropriate function using its EXACT name and arguments from the 'tools' list. "
-                "Do not invent tool names or arguments. Wait for the function result, then answer "
-                "using that data. Never claim to have called a tool you did not actually call, "
-                "and never output text like 'tool_call' in your reply."
-            )
-        }
-    ]
-    for m in req.messages:
-        messages_payload.append({"role": m.role, "content": m.content})
+        messages_payload = [
+            {
+                "role": "system",
+                "content": (
+                    f"You are Research Copilot assisting {user_email}. "
+                    "You have access to tools defined in the 'tools' parameter of this request. "
+                    "To retrieve database metrics, papers, notes, or reading progress, call the "
+                    "appropriate function using its EXACT name and arguments from the 'tools' list. "
+                    "Do not invent tool names or arguments. Wait for the function result, then answer "
+                    "using that data. Never claim to have called a tool you did not actually call, "
+                    "and never output text like 'tool_call' in your reply."
+                )
+            }
+        ]
+        for m in req.messages:
+            messages_payload.append({"role": m.role, "content": m.content})
 
-    agent = run_agent(user_email, messages_payload, openai_client, bearer_token)
-    return StreamingResponse(_sse_encoder(agent), media_type="text/event-stream")
+        agent = run_agent(user_email, messages_payload, openai_client, bearer_token)
+        return StreamingResponse(_sse_encoder(agent), media_type="text/event-stream")
+    except Exception as e:
+        logger.exception("Failed to initialize chat stream")
+        async def _error_stream():
+            err_data = {
+                "type": "error",
+                "content": "Failed to initialize agent connection.",
+                "detail": str(e),
+                "hint": "Check backend configuration and logs."
+            }
+            yield f"data: {json.dumps(err_data)}\n\n"
+        return StreamingResponse(_error_stream(), media_type="text/event-stream")
 
 
 def _aggregate_agent_events(events):
@@ -284,11 +293,6 @@ async def _sse_encoder(events):
         yield f"data: {json.dumps(event)}\n\n"
 
 
-@mlflow.trace(
-    name="research_copilot_agent",
-    span_type=SpanType.AGENT,
-    output_reducer=_aggregate_agent_events,
-)
 async def run_agent(user_email: str, messages_payload: list, openai_client: OpenAI, bearer_token: str = ""):
     """Orchestrate the chat agent: MCP tool discovery, LLM call, tool calls, synthesis.
 
@@ -297,18 +301,27 @@ async def run_agent(user_email: str, messages_payload: list, openai_client: Open
     CHAT_MODEL span. Yields SSE event dicts.
     """
     last_user_msg = messages_payload[-1]["content"] if messages_payload else ""
-    mlflow.update_current_trace(
-        tags={"user": user_email, "app": "research-copilot-ui", "model": ENDPOINT_NAME},
-        request_preview=f"Q: {last_user_msg[:200]}",
-    )
+    events_collected = []
+
+    def _track_event(ev):
+        events_collected.append(ev)
+        return ev
 
     try:
-        yield {"type": "status", "content": "Discovering MCP tools..."}
+        try:
+            agent_span_cm = mlflow.start_span(name="research_copilot_agent", span_type=SpanType.AGENT)
+            agent_span = agent_span_cm.__enter__()
+            agent_span.set_inputs({"user": user_email, "messages": last_user_msg})
+        except Exception as mlflow_err:
+            logger.warning("Could not start MLflow AGENT span: %s", mlflow_err)
+            agent_span_cm = None
+            agent_span = None
+
+        yield _track_event({"type": "status", "content": "Discovering MCP tools..."})
         openai_tools, tool_router = await mcp_registry.get_all_tools(bearer_token=bearer_token)
 
-        span = mlflow.get_current_active_span()
-        if span is not None:
-            span.set_attributes({
+        if agent_span is not None:
+            agent_span.set_attributes({
                 "mcp_tools_loaded": [t["function"]["name"] for t in openai_tools],
                 "mcp_tools_count": len(openai_tools),
             })
@@ -359,8 +372,8 @@ async def run_agent(user_email: str, messages_payload: list, openai_client: Open
                 }
 
         emitted = list(tool_calls_data.values())
-        if span is not None:
-            span.set_attributes({
+        if agent_span is not None:
+            agent_span.set_attributes({
                 "llm_emitted_tool_calls": [t["name"] for t in emitted],
                 "llm_tool_calls_count": len(emitted),
             })
@@ -453,9 +466,18 @@ async def run_agent(user_email: str, messages_payload: list, openai_client: Open
 
     except Exception as e:
         logger.exception("Stream execution error")
-        yield {
+        err_ev = {
             "type": "error",
             "content": "Something went wrong while answering.",
             "detail": str(e),
             "hint": "Retry, and check the app logs for the full traceback.",
         }
+        events_collected.append(err_ev)
+        yield err_ev
+    finally:
+        if agent_span is not None and agent_span_cm is not None:
+            try:
+                agent_span.set_outputs(_aggregate_agent_events(events_collected))
+                agent_span_cm.__exit__(None, None, None)
+            except Exception as exit_err:
+                logger.warning("Could not close MLflow agent span: %s", exit_err)

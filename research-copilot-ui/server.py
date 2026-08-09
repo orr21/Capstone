@@ -86,27 +86,45 @@ def get_openai_client():
         _openai_client = OpenAI(api_key=token, base_url=f"{host}/serving-endpoints")
     return _openai_client
 
-class _BearerAuth(httpx.Auth):
-    """httpx auth that uses WorkspaceClient to get a fresh OAuth M2M token.
+def _resolve_bearer_token(forwarded_token: str = "") -> str:
+    """Resolve the best available bearer token for calling other Databricks Apps.
 
-    When running inside a Databricks App the platform injects
-    DATABRICKS_CLIENT_ID and DATABRICKS_CLIENT_SECRET.  WorkspaceClient
-    picks these up automatically and performs the OAuth2 client_credentials
-    flow, returning a JWT that the Databricks Apps front-door proxy accepts.
+    Priority:
+    1. X-Forwarded-Access-Token injected by Databricks Apps — the user's own
+       OAuth token, accepted by any app the user has access to.  No service
+       principal CAN USE grant is required.
+    2. WorkspaceClient M2M token — the app service principal's OAuth token.
+       Requires the SP to have CAN USE on the target app.
     """
+    token = (forwarded_token or "").strip()
+    if token:
+        logger.debug("MCP auth: using X-Forwarded-Access-Token (user OBO token)")
+        return token
 
-    def __init__(self):
-        self._ws = None
+    # Fallback: service-principal M2M via auto-injected client_id/secret
+    try:
+        w = WorkspaceClient()
+        headers = w.config.authenticate()
+        sp_token = headers.get("Authorization", "").replace("Bearer ", "").strip()
+        if sp_token:
+            logger.debug("MCP auth: using WorkspaceClient M2M token (SP credentials)")
+            return sp_token
+    except Exception as e:
+        logger.warning("WorkspaceClient M2M token fetch failed: %s", e)
 
-    def _get_token(self) -> str:
-        if self._ws is None:
-            self._ws = WorkspaceClient()
-        headers = self._ws.config.authenticate()
-        return headers.get("Authorization", "").replace("Bearer ", "")
+    logger.warning("MCP auth: no token available — request will likely be rejected (401)")
+    return ""
+
+
+class _BearerAuth(httpx.Auth):
+    """httpx auth that injects a pre-resolved Bearer token."""
+
+    def __init__(self, token: str):
+        self._token = token
 
     def auth_flow(self, request):
-        token = self._get_token()
-        request.headers["Authorization"] = f"Bearer {token}"
+        if self._token:
+            request.headers["Authorization"] = f"Bearer {self._token}"
         yield request
 
 
@@ -114,27 +132,22 @@ class MultiMCPRegistry:
     def __init__(self, servers: Dict[str, str]):
         self.servers = servers
         self.last_errors: List[str] = []
-        self._auth = None
 
-    def _resolve_auth(self):
-        """Return httpx auth for Databricks Apps endpoints.
+    def _make_auth(self, bearer_token: str) -> httpx.Auth:
+        """Build a per-request auth object from the resolved token."""
+        return _BearerAuth(bearer_token)
 
-        Uses WorkspaceClient to obtain a fresh OAuth M2M token via the
-        auto-injected service-principal credentials.  The token is refreshed
-        automatically by the SDK on each call.
-        """
-        if self._auth is None:
-            self._auth = _BearerAuth()
-        return self._auth
-
-    async def get_all_tools(self) -> tuple[List[Dict[str, Any]], Dict[str, tuple[str, str]]]:
+    async def get_all_tools(
+        self, bearer_token: str = ""
+    ) -> tuple[List[Dict[str, Any]], Dict[str, tuple[str, str]]]:
         openai_tools = []
         tool_router: Dict[str, tuple[str, str]] = {}
         self.last_errors = []
+        auth = self._make_auth(bearer_token)
 
         for namespace, url in self.servers.items():
             try:
-                async with FastMCPClient(url, auth=self._resolve_auth()) as client:
+                async with FastMCPClient(url, auth=auth) as client:
                     tools = await client.list_tools()
                     for tool in tools:
                         namespaced_name = f"{namespace}_{tool.name}"
@@ -159,14 +172,21 @@ class MultiMCPRegistry:
 
         return openai_tools, tool_router
 
-    async def call_tool(self, namespaced_name: str, args: dict, tool_router: Dict[str, tuple[str, str]]) -> str:
+    async def call_tool(
+        self,
+        namespaced_name: str,
+        args: dict,
+        tool_router: Dict[str, tuple[str, str]],
+        bearer_token: str = "",
+    ) -> str:
         if namespaced_name not in tool_router:
             raise ValueError(f"Unknown tool: {namespaced_name}")
 
         namespace, original_tool_name = tool_router[namespaced_name]
         url = self.servers[namespace]
+        auth = self._make_auth(bearer_token)
 
-        async with FastMCPClient(url, auth=self._resolve_auth()) as client:
+        async with FastMCPClient(url, auth=auth) as client:
             result = await client.call_tool(original_tool_name, args)
             return str(result)
 
@@ -193,6 +213,15 @@ def read_config():
 @app.post("/api/chat/stream")
 async def chat_stream_endpoint(req: ChatRequest, request: Request):
     user_email = request.headers.get("x-forwarded-user", "demo_user@workspace.com")
+
+    # X-Forwarded-Access-Token is injected by Databricks Apps on every
+    # authenticated request — it's the user's own OAuth token and is the
+    # most reliable credential for calling other Databricks Apps.
+    forwarded_token = request.headers.get("x-forwarded-access-token", "")
+    bearer_token = _resolve_bearer_token(forwarded_token)
+    if not bearer_token:
+        logger.warning("No bearer token resolved; MCP calls will likely fail with 401")
+
     openai_client = get_openai_client()
 
     messages_payload = [
@@ -212,7 +241,7 @@ async def chat_stream_endpoint(req: ChatRequest, request: Request):
     for m in req.messages:
         messages_payload.append({"role": m.role, "content": m.content})
 
-    agent = run_agent(user_email, messages_payload, openai_client)
+    agent = run_agent(user_email, messages_payload, openai_client, bearer_token)
     return StreamingResponse(_sse_encoder(agent), media_type="text/event-stream")
 
 
@@ -260,7 +289,7 @@ async def _sse_encoder(events):
     span_type=SpanType.AGENT,
     output_reducer=_aggregate_agent_events,
 )
-async def run_agent(user_email: str, messages_payload: list, openai_client: OpenAI):
+async def run_agent(user_email: str, messages_payload: list, openai_client: OpenAI, bearer_token: str = ""):
     """Orchestrate the chat agent: MCP tool discovery, LLM call, tool calls, synthesis.
 
     The whole flow is one MLflow AGENT trace; each MCP tool invocation is a nested
@@ -275,7 +304,7 @@ async def run_agent(user_email: str, messages_payload: list, openai_client: Open
 
     try:
         yield {"type": "status", "content": "Discovering MCP tools..."}
-        openai_tools, tool_router = await mcp_registry.get_all_tools()
+        openai_tools, tool_router = await mcp_registry.get_all_tools(bearer_token=bearer_token)
 
         span = mlflow.get_current_active_span()
         if span is not None:
@@ -388,7 +417,9 @@ async def run_agent(user_email: str, messages_payload: list, openai_client: Open
                     "arguments": tool_args,
                 })
                 try:
-                    tool_output = await mcp_registry.call_tool(resolved, tool_args, tool_router)
+                    tool_output = await mcp_registry.call_tool(
+                        resolved, tool_args, tool_router, bearer_token=bearer_token
+                    )
                     tool_span.set_outputs({"output": tool_output, "status": "success"})
                 except Exception as tool_err:
                     error_msg = str(tool_err)

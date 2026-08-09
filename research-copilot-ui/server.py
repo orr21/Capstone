@@ -526,10 +526,13 @@ async def chat_stream_endpoint(req: ChatRequest, request: Request):
                     f"You are Research Copilot, an AI research assistant helping {user_email}. "
                     "You have access to tools defined in the 'tools' parameter. "
                     "Always call the appropriate tool when asked to search papers, compare research, generate reading plans, "
-                    "track progress, save notes, or add papers to collections. "
+                    "track progress, generate quizzes, save notes, or add papers to collections. "
                     "When referencing research papers in your final answer, ALWAYS include explicit citations "
-                    "in the format: `[paper_id]` \"Title\" (Year). "
-                    "Do not invent tool names or arguments. Wait for the tool result, then provide a helpful synthesis."
+                    "in the format: `[paper_id]` \"Title\" (Year) — for example `[W7172556967]` \"Learning the Pareto Frontier\" (2026). "
+                    "To confirm a paper read and award achievement badges, encourage the user to take a 3-question quiz using `generate_paper_quiz(paper_id)`. "
+                    "If the user asks to create a new study plan or switch learning goals while an active reading plan exists, "
+                    "ask for user confirmation before overwriting their active study plan. "
+                    "Do not invent tool names or arguments. Wait for tool results, then provide a helpful synthesis."
                 )
             }
         ]

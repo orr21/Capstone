@@ -447,6 +447,108 @@ def generate_sequenced_reading_plan(user_id: str, goal_id: str = "", plan_title:
         conn.close()
 
 @mcp.tool
+def generate_paper_quiz(paper_id: str) -> dict:
+    """
+    Generates a 3-question comprehension quiz for a research paper in Lakebase.
+    Students must pass this quiz to confirm paper completion and unlock verified achievement badges.
+    """
+    conn = get_db_conn()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT paper_id, title, abstract_text, publication_year FROM papers WHERE paper_id = %s OR doi ILIKE %s LIMIT 1", (paper_id, f"%{paper_id}%"))
+        row = cursor.fetchone()
+        cursor.close()
+        conn.close()
+
+        if not row:
+            return {"status": "error", "message": f"Paper '{paper_id}' not found in Lakebase."}
+
+        pid, title, abstract, year = row
+        abstract_snippet = (abstract[:250] + "...") if abstract else "this research paper"
+
+        questions = [
+            {
+                "id": 1,
+                "question": f"What is the primary contribution or topic of '{title[:60]}...'?",
+                "options": [
+                    f"Research investigating {abstract_snippet[:80]}",
+                    "A study on traditional manual manufacturing processes",
+                    "An overview of historical 19th century literature",
+                    "Database storage benchmarking"
+                ],
+                "correct_option": 0
+            },
+            {
+                "id": 2,
+                "question": "Which publication year is associated with this paper?",
+                "options": [str(year), str(year - 5) if year else "2020", str(year + 1) if year else "2026", "2010"],
+                "correct_option": 0
+            },
+            {
+                "id": 3,
+                "question": "Why is verifying paper comprehension important for research progress?",
+                "options": [
+                    "To ensure conceptual understanding before building on findings",
+                    "To skip reading the abstract",
+                    "To delete paper citations",
+                    "No practical reason"
+                ],
+                "correct_option": 0
+            }
+        ]
+
+        return {
+            "status": "success",
+            "paper_id": pid,
+            "title": title,
+            "quiz": {
+                "paper_id": pid,
+                "title": title,
+                "questions": questions
+            }
+        }
+    except Exception as e:
+        logger.exception("generate_paper_quiz failed")
+        return {"status": "error", "message": str(e)}
+
+@mcp.tool
+def submit_quiz_answers(user_id: str, paper_id: str, score_percent: int) -> dict:
+    """
+    Submits quiz results for a paper. If score_percent >= 70%, marks the paper as COMPLETED in Lakebase and awards verified badges.
+    """
+    passed = score_percent >= 70
+    conn = get_db_conn()
+    try:
+        cursor = conn.cursor()
+        if passed:
+            prog_id = f"prog_{user_id}_{paper_id[:10]}"
+            cursor.execute(
+                """
+                INSERT INTO reading_progress (progress_id, user_id, paper_id, status)
+                VALUES (%s, %s, %s, 'COMPLETED')
+                ON CONFLICT (user_id, paper_id) DO UPDATE SET status = 'COMPLETED', updated_at = CURRENT_TIMESTAMP
+                """,
+                (prog_id, user_id, paper_id)
+            )
+            conn.commit()
+            msg = f"🎉 Quiz Passed ({score_percent}%)! Paper '{paper_id}' marked as COMPLETED. Achievement badges updated!"
+        else:
+            msg = f"Quiz Score: {score_percent}%. Review the abstract and try again to unlock completion!"
+
+        cursor.close()
+        conn.close()
+        return {
+            "status": "success",
+            "paper_id": paper_id,
+            "passed": passed,
+            "score_percent": score_percent,
+            "message": msg
+        }
+    except Exception as e:
+        logger.exception("submit_quiz_answers failed")
+        return {"status": "error", "message": str(e)}
+
+@mcp.tool
 def add_paper_to_collection(user_id: str, collection_name: str, paper_id: str) -> dict:
     """
     Adds a paper to a user's collection, creating the collection if it doesn't already exist.

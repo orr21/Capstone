@@ -644,6 +644,85 @@
       line-height: 1.35;
     }
 
+    /* ── Interactive Citation Badges & Quizzes ───────────────────────────── */
+    .paper-citation-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      background: var(--surface-card);
+      border: 1px solid var(--hairline-strong);
+      color: var(--ink);
+      font-family: 'Courier New', monospace;
+      font-size: 11px;
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: var(--r-pill);
+      cursor: pointer;
+      margin: 0 2px;
+      transition: all 0.15s ease;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.03);
+    }
+
+    .paper-citation-tag:hover {
+      background: var(--ink);
+      color: var(--on-primary);
+      border-color: var(--ink);
+      transform: translateY(-1px);
+    }
+
+    .quiz-card {
+      background: var(--surface-card);
+      border: 1px solid var(--hairline-strong);
+      border-radius: var(--r-lg);
+      padding: var(--sp-md);
+      margin-top: var(--sp-sm);
+      display: flex;
+      flex-direction: column;
+      gap: var(--sp-sm);
+    }
+
+    .quiz-title {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--ink);
+    }
+
+    .quiz-question-block {
+      background: var(--canvas);
+      border: 1px solid var(--hairline);
+      border-radius: var(--r-md);
+      padding: 8px var(--sp-sm);
+    }
+
+    .quiz-q-text {
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--ink);
+      margin-bottom: 6px;
+    }
+
+    .quiz-option-label {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      color: var(--ink-secondary);
+      cursor: pointer;
+      padding: 3px 0;
+    }
+
+    .quiz-submit-btn {
+      align-self: flex-start;
+      background: var(--ink);
+      color: var(--on-primary);
+      border: none;
+      border-radius: var(--r-pill);
+      padding: 6px 14px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
     .sidebar {
       width: 260px;
       background: var(--canvas-soft);
@@ -1809,7 +1888,7 @@
             if (m.role === 'user') {
               bubble.textContent = m.content;
             } else {
-              bubble.innerHTML = marked.parse(m.content);
+              bubble.innerHTML = renderCitationLinks(marked.parse(m.content));
             }
             container.appendChild(row);
           }
@@ -2061,6 +2140,13 @@
       `;
     }
 
+    function renderCitationLinks(html) {
+      if (!html) return html;
+      return html.replace(/\[(W\d+|paper_[a-zA-Z0-9_-]+)\]/g, (match, pid) => {
+        return `<span class="paper-citation-tag" onclick="promptTool('Tell me more about paper ${pid}')" title="Click to view details for ${pid}">📄 ${pid}</span>`;
+      });
+    }
+
     function toggleOutput(btn) {
       const body = btn.nextElementSibling;
       const shown = body.style.display !== 'none';
@@ -2175,7 +2261,7 @@
 
               case 'chunk':
                 fullText += data.content;
-                contentArea.innerHTML = marked.parse(fullText);
+                contentArea.innerHTML = renderCitationLinks(marked.parse(fullText));
                 break;
 
               case 'done':

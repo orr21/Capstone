@@ -421,12 +421,12 @@ def generate_sequenced_reading_plan(user_id: str, goal_id: str = "", plan_title:
         # Set reading status of first paper to READING and rest to TO_READ
         for idx, pid in enumerate(paper_ids):
             st = 'READING' if idx == 0 else 'TO_READ'
-            prog_id = f"prog_{user_id}_{pid[:10]}"
+            prog_id = f"prog_{uuid.uuid4().hex[:12]}"
             cursor.execute(
                 """
                 INSERT INTO reading_progress (progress_id, user_id, paper_id, status)
                 VALUES (%s, %s, %s, %s)
-                ON CONFLICT (user_id, paper_id) DO NOTHING
+                ON CONFLICT (user_id, paper_id) DO UPDATE SET status = EXCLUDED.status, updated_at = CURRENT_TIMESTAMP
                 """,
                 (prog_id, user_id, pid, st)
             )

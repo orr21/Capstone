@@ -189,6 +189,216 @@
       border: 1px solid var(--hairline);
     }
 
+    /* ── Top Nav Tabs ────────────────────────────────────────────────────────── */
+    .nav-tabs {
+      display: flex;
+      align-items: center;
+      gap: var(--sp-xs);
+      background: var(--surface-card);
+      border: 1px solid var(--hairline-strong);
+      padding: 3px;
+      border-radius: var(--r-pill);
+    }
+
+    .nav-tab-btn {
+      background: transparent;
+      border: none;
+      border-radius: var(--r-pill);
+      padding: 5px 14px;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--muted);
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+
+    .nav-tab-btn:hover {
+      color: var(--ink);
+    }
+
+    .nav-tab-btn.active {
+      background: var(--ink);
+      color: var(--on-primary);
+      box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+    }
+
+    /* ── Full-screen Kanban Workspace View ──────────────────────────────────── */
+    .kanban-workspace-view {
+      flex: 1;
+      display: none;
+      flex-direction: column;
+      gap: var(--sp-md);
+      padding: var(--sp-lg);
+      background: var(--canvas);
+      overflow-y: auto;
+    }
+
+    .kanban-workspace-view.active {
+      display: flex;
+    }
+
+    .topic-bar-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--sp-base);
+    }
+
+    .topic-pills-row {
+      display: flex;
+      align-items: center;
+      gap: var(--sp-xs);
+      overflow-x: auto;
+    }
+
+    .topic-pill {
+      background: var(--surface-card);
+      border: 1px solid var(--hairline);
+      border-radius: var(--r-pill);
+      padding: 6px 14px;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--ink-secondary);
+      cursor: pointer;
+      white-space: nowrap;
+      transition: all 0.15s ease;
+    }
+
+    .topic-pill:hover {
+      border-color: var(--ink);
+    }
+
+    .topic-pill.active {
+      background: var(--ink);
+      color: var(--on-primary);
+      border-color: var(--ink);
+    }
+
+    .add-topic-btn {
+      background: var(--surface-strong);
+      border: 1px dashed var(--hairline-strong);
+      color: var(--ink);
+      border-radius: var(--r-pill);
+      padding: 6px 12px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    .kanban-columns-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: var(--sp-md);
+      flex: 1;
+      min-height: 400px;
+    }
+
+    .kanban-main-col {
+      background: var(--canvas-soft);
+      border: 1px solid var(--hairline-strong);
+      border-radius: var(--r-xl);
+      padding: var(--sp-base);
+      display: flex;
+      flex-direction: column;
+      gap: var(--sp-sm);
+    }
+
+    .kanban-main-col-title {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--ink);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid var(--hairline);
+      padding-bottom: 8px;
+    }
+
+    .col-count-badge {
+      font-size: 11px;
+      background: var(--surface-strong);
+      color: var(--ink);
+      padding: 2px 8px;
+      border-radius: var(--r-pill);
+    }
+
+    .kanban-cards-wrapper {
+      display: flex;
+      flex-direction: column;
+      gap: var(--sp-sm);
+      flex: 1;
+      overflow-y: auto;
+    }
+
+    .kanban-card-full {
+      background: var(--surface-card);
+      border: 1px solid var(--hairline);
+      border-radius: var(--r-lg);
+      padding: var(--sp-base);
+      display: flex;
+      flex-direction: column;
+      gap: var(--sp-xs);
+      box-shadow: 0 2px 8px rgba(0,0,0,0.03);
+      transition: transform 0.15s ease, border-color 0.15s ease;
+    }
+
+    .kanban-card-full:hover {
+      border-color: var(--ink);
+      transform: translateY(-2px);
+    }
+
+    .card-paper-pid {
+      font-family: 'Courier New', monospace;
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--muted);
+    }
+
+    .card-paper-title {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--ink);
+      line-height: 1.35;
+    }
+
+    .card-ai-actions {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-top: 6px;
+      flex-wrap: wrap;
+    }
+
+    .card-action-chip {
+      font-size: 11px;
+      font-weight: 500;
+      background: var(--canvas);
+      border: 1px solid var(--hairline);
+      border-radius: var(--r-pill);
+      padding: 4px 10px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      color: var(--ink);
+      transition: all 0.15s ease;
+    }
+
+    .card-action-chip:hover {
+      background: var(--ink);
+      color: var(--on-primary);
+    }
+
+    .mastered-badge-tag {
+      background: #dcfce7;
+      color: #166534;
+      border: 1px solid rgba(22, 163, 74, 0.3);
+      font-size: 11px;
+      font-weight: 600;
+      padding: 3px 8px;
+      border-radius: var(--r-pill);
+    }
+
     /* ── Tools trigger & modal ──────────────────────────────────────────────── */
     .tools-trigger-btn {
       background: var(--surface-card);
@@ -1723,6 +1933,50 @@
 
   </div> <!-- End .app-viewport -->
 
+  <!-- Full-screen Kanban Workspace View -->
+  <div class="kanban-workspace-view" id="kanban-workspace-view">
+    <div class="topic-bar-header">
+      <div class="topic-pills-row" id="topic-pills-row">
+        <button class="topic-pill active" onclick="selectTopicBoard('Machine Learning')">🤖 Machine Learning</button>
+        <button class="topic-pill" onclick="selectTopicBoard('Data Engineering')">💻 Data Engineering</button>
+        <button class="topic-pill" onclick="selectTopicBoard('Transformers')">⚡ Transformers</button>
+      </div>
+      <button class="add-topic-btn" onclick="promptNewTopicBoard()">+ Add Topic Board</button>
+    </div>
+
+    <div class="kanban-columns-grid">
+      <div class="kanban-main-col">
+        <div class="kanban-main-col-title">
+          <span>📋 To Read</span>
+          <span class="col-count-badge" id="kw-count-to-read">0</span>
+        </div>
+        <div class="kanban-cards-wrapper" id="kw-cards-to-read">
+          <!-- Cards -->
+        </div>
+      </div>
+
+      <div class="kanban-main-col">
+        <div class="kanban-main-col-title">
+          <span>📖 Currently Reading</span>
+          <span class="col-count-badge" id="kw-count-reading">0</span>
+        </div>
+        <div class="kanban-cards-wrapper" id="kw-cards-reading">
+          <!-- Cards -->
+        </div>
+      </div>
+
+      <div class="kanban-main-col">
+        <div class="kanban-main-col-title">
+          <span>🏆 Mastered</span>
+          <span class="col-count-badge" id="kw-count-mastered">0</span>
+        </div>
+        <div class="kanban-cards-wrapper" id="kw-cards-mastered">
+          <!-- Cards -->
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- User Login / Demo Selector Modal -->
   <div class="user-modal-backdrop" id="user-modal-backdrop" onclick="toggleUserModal(false)">
     <div class="user-modal" onclick="event.stopPropagation()">
@@ -1779,8 +2033,30 @@
     let messageHistory      = [];
     let isStreaming         = false;
     let activeConversationId= null;
+    let activeTopicBoard    = 'Machine Learning';
     let currentUserEmail    = localStorage.getItem('active_user_email') || 'maria.garcia@mit.edu';
     let currentUserName     = localStorage.getItem('active_user_name')  || 'Maria Garcia';
+
+    /* ── Top Nav Tab Switcher ────────────────────────────────────────────── */
+    function switchNavTab(tab) {
+      const chatViewport   = document.querySelector('.app-viewport');
+      const kanbanView     = document.getElementById('kanban-workspace-view');
+      const btnChat        = document.getElementById('tab-btn-chat');
+      const btnKanban      = document.getElementById('tab-btn-kanban');
+
+      if (tab === 'chat') {
+        chatViewport.style.display = 'flex';
+        kanbanView.classList.remove('active');
+        btnChat.classList.add('active');
+        btnKanban.classList.remove('active');
+      } else {
+        chatViewport.style.display = 'none';
+        kanbanView.classList.add('active');
+        btnKanban.classList.add('active');
+        btnChat.classList.remove('active');
+        renderTopicKanbanWorkspace();
+      }
+    }
 
     /* ── Boot ───────────────────────────────────────────────────────────── */
     window.addEventListener('DOMContentLoaded', async () => {
@@ -1902,8 +2178,101 @@
             `).join('');
           }
         }
+
+        // 5. Full-Screen Kanban Workspace render
+        renderTopicKanbanWorkspace(data);
+
       } catch (err) {
         console.warn('Failed to load dashboard:', err);
+      }
+    }
+
+    let latestDashboardData = null;
+
+    function renderTopicKanbanWorkspace(data) {
+      if (data) latestDashboardData = data;
+      const dash = data || latestDashboardData;
+      
+      const trWrapper = document.getElementById('kw-cards-to-read');
+      const rdWrapper = document.getElementById('kw-cards-reading');
+      const cmWrapper = document.getElementById('kw-cards-mastered');
+
+      const trCount = document.getElementById('kw-count-to-read');
+      const rdCount = document.getElementById('kw-count-reading');
+      const cmCount = document.getElementById('kw-count-mastered');
+
+      if (!dash) return;
+
+      // 1. To Read cards
+      let toReadPapers = (dash.active_plan && dash.active_plan.paper_ids && dash.active_plan.paper_ids.length > 1)
+        ? dash.active_plan.paper_ids.slice(1)
+        : [];
+      
+      if (trCount) trCount.textContent = toReadPapers.length;
+      if (trWrapper) {
+        trWrapper.innerHTML = toReadPapers.length ? toReadPapers.map(pid => `
+          <div class="kanban-card-full">
+            <span class="card-paper-pid">[${escHtml(pid)}]</span>
+            <div class="card-paper-title">Paper ${escHtml(pid)}</div>
+            <div class="card-ai-actions">
+              <span class="card-action-chip" onclick="switchNavTab('chat'); promptTool('Tell me more about paper ${escHtml(pid)}')">💬 Ask Copilot</span>
+              <span class="card-action-chip" onclick="promptTool('Mark paper ${escHtml(pid)} as READING')">Start Reading →</span>
+            </div>
+          </div>
+        `).join('') : `<div class="inspector-empty">No papers in queue</div>`;
+      }
+
+      // 2. Currently Reading cards
+      let readingPaper = dash.recommended_paper;
+      if (rdCount) rdCount.textContent = readingPaper ? 1 : 0;
+      if (rdWrapper) {
+        rdWrapper.innerHTML = readingPaper ? `
+          <div class="kanban-card-full">
+            <span class="card-paper-pid">[${escHtml(readingPaper.paper_id)}]</span>
+            <div class="card-paper-title">${escHtml(readingPaper.title)}</div>
+            <div class="card-ai-actions">
+              <span class="card-action-chip" onclick="switchNavTab('chat'); promptTool('Tell me more about paper ${escHtml(readingPaper.paper_id)}')">💬 Ask Copilot</span>
+              <span class="card-action-chip" onclick="promptTool('Generate a quiz for paper ${escHtml(readingPaper.paper_id)}')">📝 Take AI Quiz 🏆</span>
+            </div>
+          </div>
+        ` : `<div class="inspector-empty">No active paper being read</div>`;
+      }
+
+      // 3. Mastered cards
+      let completedCount = dash.stats.completed || 0;
+      if (cmCount) cmCount.textContent = completedCount;
+      if (cmWrapper) {
+        cmWrapper.innerHTML = (completedCount > 0) ? `
+          <div class="kanban-card-full">
+            <span class="mastered-badge-tag">🏆 Verified Mastered (${completedCount} Papers)</span>
+            <div class="card-paper-title">Quiz Comprehension Verified</div>
+            <div class="card-ai-actions">
+              <span class="card-action-chip" onclick="switchNavTab('chat'); promptTool('List all completed papers')">📜 View Mastered Catalog</span>
+            </div>
+          </div>
+        ` : `<div class="inspector-empty">Pass paper quizzes to mark as Mastered!</div>`;
+      }
+    }
+
+    function selectTopicBoard(topic) {
+      activeTopicBoard = topic;
+      document.querySelectorAll('.topic-pill').forEach(btn => {
+        btn.classList.toggle('active', btn.textContent.includes(topic));
+      });
+      renderTopicKanbanWorkspace();
+    }
+
+    function promptNewTopicBoard() {
+      const name = prompt('Enter new topic board name (e.g. Reinforcement Learning):');
+      if (!name) return;
+      const row = document.getElementById('topic-pills-row');
+      if (row) {
+        const btn = document.createElement('button');
+        btn.className = 'topic-pill active';
+        btn.onclick = () => selectTopicBoard(name);
+        btn.textContent = `📌 ${name}`;
+        row.appendChild(btn);
+        selectTopicBoard(name);
       }
     }
 

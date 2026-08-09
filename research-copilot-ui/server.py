@@ -438,10 +438,75 @@ def _validate_tool_call_guardrails(tool_name: str, args: dict):
         if isinstance(top_k, int):
             args["top_k"] = max(1, min(top_k, 20))
             
+    elif tool_name == "summarize_and_compare_papers":
+        # Drop placeholder paper IDs (e.g. "<paper_id_1>") the model may hallucinate
+        raw_ids = args.get("paper_ids")
+        if isinstance(raw_ids, list):
+            cleaned = [pid for pid in raw_ids if not _is_placeholder_paper_id(str(pid))]
+            args["paper_ids"] = cleaned if cleaned else ["__placeholders_only__"]
+            
     elif tool_name == "update_reading_progress":
         status = str(args.get("status", "")).upper()
         if status in ["TO_READ", "READING", "COMPLETED"]:
             args["status"] = status
+
+
+def _is_placeholder_paper_id(paper_id: str) -> bool:
+    """True if a paper ID looks like an LLM placeholder rather than a real OpenAlex ID."""
+    pid = (paper_id or "").strip()
+    if not pid:
+        return True
+    if re.match(r"^<[^>]+>$|^paper_id_\d+$|^PAPER_ID_\d+$", pid):
+        return True
+    if "<" in pid or ">" in pid:
+        return True
+    if pid.lower().startswith("paper_id") and not pid.lower().startswith("https"):
+        return True
+    return False
+
+
+_ERROR_PATTERNS = (
+    '"status": "error"',
+    "error comparing",
+    "error matching",
+    "unknown tool",
+    "not found",
+    "none of the specified",
+    "placeholder",
+    "no research papers found",
+    "error:",
+)
+
+
+def _recovery_nudge(tool_results: list) -> str:
+    """Build a corrective user message when a tool call failed or hit a dead-end.
+
+    `tool_results` is a list of (tool_name, raw_output_string). Returns an
+    empty string when no corrective action is needed.
+    """
+    failed_tool = None
+    for tool_name, raw_output in tool_results:
+        output = str(raw_output or "").lower()
+        if any(p in output for p in _ERROR_PATTERNS):
+            failed_tool = tool_name
+            break
+    if not failed_tool:
+        return ""
+
+    if "compare" in failed_tool.lower():
+        return (
+            "A tool call failed: `summarize_and_compare_papers` was given paper IDs that were "
+            "placeholders or not in Lakebase. Run `search_research_papers` or `find_papers_for_goal` "
+            "FIRST to obtain real OpenAlex paper IDs (e.g. https://openalex.org/W...), then retry "
+            "`summarize_and_compare_papers` with those real IDs. If you cannot get real IDs, answer "
+            "the user directly with what you know and stop calling tools."
+        )
+
+    return (
+        f"The tool call `{failed_tool}` failed. Review the tool error above, fix the arguments, "
+        "and retry the call. If the tool cannot fulfill the request, answer the user directly "
+        "with what you know and stop calling tools."
+    )
 
 @app.delete("/api/conversations/{conversation_id}")
 def delete_conversation(conversation_id: str):
@@ -712,57 +777,68 @@ def _aggregate_agent_events(events):
 
 
 async def _sse_encoder_with_run(events, user_email: str = "", last_user_msg: str = "", conversation_id: Optional[str] = None):
-    """Wrap the agent generator in an explicit MLflow run so traces are committed.
+    """Wrap the agent generator in a single MLflow trace so each request is one debuggable session.
 
-    Using mlflow.start_run() ensures each request creates a real run entry in
-    the experiment, even though run_agent is an async generator (which @mlflow.trace
-    cannot reliably commit for generators). Also records output to Lakebase.
+    mlflow.start_trace() makes the whole request a single trace rooted at 'research_copilot_agent';
+    every LLM call (autolog) and MCP tool call is recorded as a nested span inside that one trace,
+    so you can grab a single trace link and share it for debugging. Tracing is best-effort: if it
+    fails, events still stream normally.
     """
     collected: list = []
     final_text_parts: list = []
+    trace_active = False
     try:
-        with mlflow.start_run(run_name=f"copilot_{user_email[:20]}") as _run:
+        if os.environ.get("MLFLOW_EXPERIMENT_ID"):
             try:
-                mlflow.set_tags({
-                    "user": user_email,
-                    "app": "research-copilot-ui",
-                    "model": ENDPOINT_NAME,
-                })
-            except Exception:
-                pass
-            with mlflow.start_span(
-                name="research_copilot_agent",
-                span_type=SpanType.AGENT,
-            ) as agent_span:
+                mlflow.start_trace(name="research_copilot_agent")
+                trace_active = True
                 try:
-                    agent_span.set_inputs({"user": user_email, "question": last_user_msg[:500]})
+                    mlflow.set_tags({
+                        "user": user_email,
+                        "app": "research-copilot-ui",
+                        "model": ENDPOINT_NAME,
+                    })
                 except Exception:
                     pass
-                async for event in events:
-                    collected.append(event)
-                    if event.get("type") == "chunk":
-                        final_text_parts.append(event.get("content", ""))
-                    yield f"data: {json.dumps(event)}\n\n"
-                try:
-                    agent_span.set_outputs(_aggregate_agent_events(collected))
-                except Exception:
-                    pass
+                span = mlflow.get_current_active_span()
+                if span is not None:
+                    try:
+                        span.set_inputs({"user": user_email, "question": last_user_msg[:500]})
+                    except Exception:
+                        pass
+            except Exception as e:
+                logger.warning("Failed to start MLflow trace, continuing without tracing: %s", e)
+                trace_active = False
 
-        # Save assistant message to Lakebase PostgreSQL
-        full_response = "".join(final_text_parts)
-        if conversation_id and full_response:
-            save_chat_message(conversation_id, "assistant", full_response)
-
-    except Exception:
-        # If MLflow setup fails, still stream events without tracing
         async for event in events:
+            collected.append(event)
             if event.get("type") == "chunk":
                 final_text_parts.append(event.get("content", ""))
             yield f"data: {json.dumps(event)}\n\n"
-        
-        full_response = "".join(final_text_parts)
-        if conversation_id and full_response:
-            save_chat_message(conversation_id, "assistant", full_response)
+    except Exception:
+        # If streaming/tracing setup failed before any events, stream without tracing
+        if not collected:
+            async for event in events:
+                if event.get("type") == "chunk":
+                    final_text_parts.append(event.get("content", ""))
+                yield f"data: {json.dumps(event)}\n\n"
+    finally:
+        if trace_active:
+            try:
+                span = mlflow.get_current_active_span()
+                if span is not None:
+                    span.set_outputs(_aggregate_agent_events(collected))
+            except Exception:
+                pass
+            try:
+                mlflow.end_trace()
+            except Exception:
+                pass
+
+    # Save assistant message to Lakebase PostgreSQL
+    full_response = "".join(final_text_parts)
+    if conversation_id and full_response:
+        save_chat_message(conversation_id, "assistant", full_response)
 
 
 
@@ -770,7 +846,8 @@ async def run_agent(user_email: str, messages_payload: list, openai_client: Open
     """Orchestrate the chat agent: MCP tool discovery, LLM call, tool calls, synthesis.
 
     Yields SSE event dicts. MLflow tracing is handled by the caller (_sse_encoder_with_run)
-    via an explicit mlflow.start_run() so runs are reliably committed to the experiment.
+    via a single mlflow.start_trace() per request, so all LLM and tool spans nest inside
+    one trace per session.
     """
     try:
         yield {"type": "status", "content": "Discovering MCP tools..."}
@@ -881,6 +958,8 @@ async def run_agent(user_email: str, messages_payload: list, openai_client: Open
 
             by_original = {orig: ns_name for ns_name, (ns, orig) in tool_router.items()}
 
+            turn_tool_results = []
+
             for tc in tool_calls_list:
                 tool_name = tc["name"]
                 raw_args = tc["args"] or "{}"
@@ -894,6 +973,7 @@ async def run_agent(user_email: str, messages_payload: list, openai_client: Open
                     resolved = by_original[tool_name]
                 if resolved not in tool_router:
                     logger.error("Model called unknown tool '%s'", tool_name)
+                    original_tool_name = tool_name
                     tool_output = json.dumps({"status": "error", "message": f"Unknown tool: {tool_name}"})
                 else:
                     _, original_tool_name = tool_router[resolved]
@@ -925,11 +1005,23 @@ async def run_agent(user_email: str, messages_payload: list, openai_client: Open
 
                     yield {"type": "tool_end", "name": resolved, "output": tool_output}
 
+                turn_tool_results.append((original_tool_name, tool_output))
+
                 messages_payload.append({
                     "role": "tool",
                     "tool_call_id": tc["id"],
                     "name": tool_name,
                     "content": str(tool_output)
+                })
+
+            # Orchestrator recovery: if a tool hit an error/dead-end, nudge the model to
+            # correct course before the next LLM call instead of letting it stop or loop.
+            recovery = _recovery_nudge(turn_tool_results)
+            if recovery:
+                yield {"type": "status", "content": "Recovering from a failed tool call..."}
+                messages_payload.append({
+                    "role": "user",
+                    "content": recovery,
                 })
 
         yield {"type": "done"}

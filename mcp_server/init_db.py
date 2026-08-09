@@ -54,8 +54,12 @@ TABLES_SQL = [
         title VARCHAR(255) NOT NULL,
         description TEXT,
         target_date DATE,
+        is_active BOOLEAN DEFAULT TRUE,
         created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
     );
+    """,
+    """
+    ALTER TABLE learning_goals ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE;
     """,
     """
     CREATE TABLE IF NOT EXISTS papers (

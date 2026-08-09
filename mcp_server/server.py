@@ -1,5 +1,6 @@
 import os
 import sys
+import re
 import json
 import logging
 import uuid
@@ -316,6 +317,22 @@ def find_papers_for_goal(user_id: str, goal_title_or_id: str) -> str:
         logger.exception("find_papers_for_goal failed")
         return f"Error matching papers for goal: {str(e)}"
 
+PLACEHOLDER_ID_RE = re.compile(r"^<[^>]+>$|^paper_id_\d+$|^PAPER_ID_\d+$")
+
+def _is_placeholder_paper_id(paper_id: str) -> bool:
+    """True if a paper ID looks like an LLM placeholder rather than a real OpenAlex ID."""
+    if not paper_id:
+        return True
+    pid = paper_id.strip()
+    if PLACEHOLDER_ID_RE.match(pid):
+        return True
+    # Real OpenAlex IDs are URLs (https://openalex.org/W...) or bare W-prefixed IDs
+    if "<" in pid or ">" in pid:
+        return True
+    if pid.lower().startswith("paper_id") and not pid.lower().startswith("https"):
+        return True
+    return False
+
 @mcp.tool
 def summarize_and_compare_papers(paper_ids: List[str]) -> str:
     """
@@ -324,30 +341,44 @@ def summarize_and_compare_papers(paper_ids: List[str]) -> str:
     if not paper_ids:
         return "Please provide at least one paper_id to summarize or compare."
     
+    real_ids = [pid for pid in paper_ids if not _is_placeholder_paper_id(pid)]
+    if not real_ids:
+        return (
+            "Error: the provided paper IDs look like placeholders (e.g. '<paper_id_1>') rather than real papers. "
+            "Run `search_research_papers` or `find_papers_for_goal` FIRST to obtain real OpenAlex paper IDs, then call this tool with those IDs."
+        )
+    
     conn = get_db_conn()
     try:
         cursor = conn.cursor()
-        placeholders = ','.join(['%s'] * len(paper_ids))
+        placeholders = ','.join(['%s'] * len(real_ids))
         sql = f"""
             SELECT p.paper_id, p.title, p.abstract_text, p.publication_year, p.citation_count, p.doi, p.open_access_url
             FROM papers p
             WHERE p.paper_id IN ({placeholders})
         """
-        cursor.execute(sql, paper_ids)
+        cursor.execute(sql, real_ids)
         rows = cursor.fetchall()
         
         # Fetch associated user notes
         cursor.execute(
-            f"SELECT paper_id, content FROM notes WHERE paper_id IN ({placeholders})", paper_ids
+            f"SELECT paper_id, content FROM notes WHERE paper_id IN ({placeholders})", real_ids
         )
         note_rows = cursor.fetchall()
         notes_by_paper = {n[0]: n[1] for n in note_rows}
+        
+        found_ids = {r[0] for r in rows}
+        missing_ids = [pid for pid in real_ids if pid not in found_ids]
         
         cursor.close()
         conn.close()
 
         if not rows:
-            return "None of the specified paper IDs were found in Lakebase."
+            return (
+                f"None of the specified paper IDs were found in Lakebase: {missing_ids}. "
+                "Run `search_research_papers` or `find_papers_for_goal` to obtain real OpenAlex paper IDs "
+                "(e.g. https://openalex.org/W...), then call this tool with those IDs."
+            )
 
         output = ["### Paper Comparison Data\n"]
         for r in rows:

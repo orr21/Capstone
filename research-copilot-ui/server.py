@@ -809,122 +809,98 @@ async def run_agent(user_email: str, messages_payload: list, openai_client: Open
             yield {"type": "done"}
             return
 
-        yield {"type": "status", "content": "Querying model..."}
+        max_turns = 5
+        turn = 0
 
-        response = openai_client.chat.completions.create(
-            model=ENDPOINT_NAME,
-            messages=messages_payload,
-            tools=openai_tools if openai_tools else None,
-            tool_choice="auto" if openai_tools else None,
-            stream=False
-        )
+        while turn < max_turns:
+            turn += 1
+            yield {"type": "status", "content": f"Reasoning (step {turn})..."}
 
-        message = response.choices[0].message
-        assistant_content = message.content or ""
-
-        tool_calls_data = {}
-        if message.tool_calls:
-            for idx, tc in enumerate(message.tool_calls):
-                tool_calls_data[idx] = {
-                    "id": tc.id,
-                    "name": tc.function.name or "",
-                    "args": tc.function.arguments or "",
-                }
-
-        emitted = list(tool_calls_data.values())
-        if span is not None:
-            try:
-                span.set_attributes({
-                    "llm_emitted_tool_calls": [t["name"] for t in emitted],
-                    "llm_tool_calls_count": len(emitted),
-                })
-            except Exception:
-                pass
-        if openai_tools and not emitted:
-            logger.warning(
-                "Tools were provided to the model but it did not emit any tool calls; "
-                "it may fabricate a tool-like answer instead."
+            response = openai_client.chat.completions.create(
+                model=ENDPOINT_NAME,
+                messages=messages_payload,
+                tools=openai_tools if openai_tools else None,
+                tool_choice="auto" if openai_tools else None,
+                stream=False
             )
 
-        if not emitted:
-            if assistant_content:
-                yield {"type": "chunk", "content": assistant_content}
-            yield {"type": "done"}
-            return
+            message = response.choices[0].message
+            assistant_content = message.content or ""
+            tool_calls_list = message.tool_calls or []
 
-        messages_payload.append({
-            "role": "assistant",
-            "content": assistant_content or None,
-            "tool_calls": [
-                {
-                    "id": t["id"],
-                    "type": "function",
-                    "function": {"name": t["name"], "arguments": t["args"]}
-                } for t in tool_calls_data.values()
-            ]
-        })
-
-        by_original = {orig: ns_name for ns_name, (ns, orig) in tool_router.items()}
-        for t in tool_calls_data.values():
-            tool_name = t["name"]
-            tool_args = json.loads(t["args"] or "{}")
-
-            resolved = tool_name
-            if resolved not in tool_router and tool_name in by_original:
-                resolved = by_original[tool_name]
-                logger.info("Resolved tool call '%s' -> '%s'", tool_name, resolved)
-            if resolved not in tool_router:
-                logger.error("Model called unknown tool '%s'", tool_name)
-                raise ValueError(f"Unknown tool: {tool_name}")
-
-            _, original_tool_name = tool_router[resolved]
-
-            yield {"type": "tool_start", "name": resolved, "args": tool_args}
-
-            is_retriever = any(k in original_tool_name.lower() for k in ["search", "find", "recommend", "compare"])
-            span_type_val = SpanType.RETRIEVER if is_retriever else SpanType.TOOL
-
-            with mlflow.start_span(
-                name=f"tool_{original_tool_name}",
-                span_type=span_type_val,
-            ) as tool_span:
-                tool_span.set_inputs({
-                    "tool_name": resolved,
-                    "original_tool_name": original_tool_name,
-                    "arguments": tool_args,
-                })
-                try:
-                    tool_output = await mcp_registry.call_tool(
-                        resolved, tool_args, tool_router, bearer_token=bearer_token
+            # If no tool calls emitted, we stream the final answer and finish
+            if not tool_calls_list:
+                yield {"type": "status", "content": "Synthesizing final answer..."}
+                if assistant_content:
+                    yield {"type": "chunk", "content": assistant_content}
+                else:
+                    final_stream = openai_client.chat.completions.create(
+                        model=ENDPOINT_NAME,
+                        messages=messages_payload,
+                        stream=True
                     )
-                    tool_span.set_outputs({"output": tool_output, "status": "success"})
-                except Exception as tool_err:
-                    error_msg = str(tool_err)
-                    tool_span.set_outputs({"error": error_msg, "status": "error"})
-                    logger.exception("Tool '%s' raised an exception", resolved)
-                    raise
+                    for chunk in final_stream:
+                        delta = chunk.choices[0].delta if chunk.choices else None
+                        if delta and delta.content:
+                            yield {"type": "chunk", "content": delta.content}
+                
+                yield {"type": "done"}
+                return
 
-            yield {"type": "tool_end", "name": resolved, "output": tool_output}
+            # Append assistant message with tool calls to history
+            messages_payload.append(message)
+            by_original = {orig: ns_name for ns_name, (ns, orig) in tool_router.items()}
 
-            messages_payload.append({
-                "role": "tool",
-                "tool_call_id": t["id"],
-                "name": tool_name,
-                "content": tool_output
-            })
+            for tc in tool_calls_list:
+                tool_name = tc.function.name
+                raw_args = tc.function.arguments or "{}"
+                try:
+                    tool_args = json.loads(raw_args)
+                except Exception:
+                    tool_args = {}
 
-        yield {"type": "status", "content": "Synthesizing final answer..."}
+                resolved = tool_name
+                if resolved not in tool_router and tool_name in by_original:
+                    resolved = by_original[tool_name]
+                if resolved not in tool_router:
+                    logger.error("Model called unknown tool '%s'", tool_name)
+                    tool_output = json.dumps({"status": "error", "message": f"Unknown tool: {tool_name}"})
+                else:
+                    _, original_tool_name = tool_router[resolved]
+                    _validate_tool_call_guardrails(original_tool_name, tool_args)
 
-        final_stream = openai_client.chat.completions.create(
-            model=ENDPOINT_NAME,
-            messages=messages_payload,
-            stream=True
-        )
+                    yield {"type": "tool_start", "name": resolved, "args": tool_args}
 
-        for chunk in final_stream:
-            delta = chunk.choices[0].delta if chunk.choices else None
-            if delta and delta.content:
-                yield {"type": "chunk", "content": delta.content}
+                    is_retriever = any(k in original_tool_name.lower() for k in ["search", "find", "recommend", "compare"])
+                    span_type_val = SpanType.RETRIEVER if is_retriever else SpanType.TOOL
+
+                    with mlflow.start_span(
+                        name=f"tool_{original_tool_name}",
+                        span_type=span_type_val,
+                    ) as tool_span:
+                        tool_span.set_inputs({
+                            "tool_name": resolved,
+                            "original_tool_name": original_tool_name,
+                            "arguments": tool_args,
+                        })
+                        try:
+                            tool_output = await mcp_registry.call_tool(
+                                resolved, tool_args, tool_router, bearer_token=bearer_token
+                            )
+                            tool_span.set_outputs({"output": tool_output, "status": "success"})
+                        except Exception as tool_err:
+                            tool_output = json.dumps({"status": "error", "message": str(tool_err)})
+                            tool_span.set_outputs({"error": str(tool_err), "status": "error"})
+                            logger.exception("Tool '%s' raised an exception", resolved)
+
+                    yield {"type": "tool_end", "name": resolved, "output": tool_output}
+
+                messages_payload.append({
+                    "role": "tool",
+                    "tool_call_id": tc.id,
+                    "name": tool_name,
+                    "content": str(tool_output)
+                })
 
         yield {"type": "done"}
 

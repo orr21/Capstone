@@ -60,6 +60,8 @@ DB_USER = os.environ.get("DB_USER", "research-copilot-agent")
 DB_PASS = os.environ.get("DB_PASS", "REDACTED")
 ENDPOINT_NAME = os.environ.get("AGENT_ENDPOINT_NAME", "databricks-meta-llama-3-3-70b-instruct")
 
+TOOL_TIMEOUT_SECONDS = 120
+
 DEFAULT_MCP_CONFIG = {
     "lakebase": os.environ.get("MCP_SERVER_URL", "https://mcp-reserach-copilot-tools-7474657332212776.aws.databricksapps.com/mcp")
 }
@@ -83,6 +85,7 @@ def _get_databricks_chat_model() -> ChatOpenAI:
         model=ENDPOINT_NAME,
         base_url=f"{host}/serving-endpoints",
         api_key=token,
+        timeout=180,
     )
 
 def _resolve_bearer_token(forwarded_token: str = "") -> str:
@@ -741,6 +744,53 @@ def save_kanban_chat_messages(req: KanbanChatSaveRequest):
         logger.exception("Failed to save kanban chat messages")
         return {"status": "error", "message": str(e)}
 
+class ReadingProgressRequest(BaseModel):
+    user_email: str
+    paper_id: str
+    status: str
+
+@app.post("/api/reading_progress")
+def set_reading_progress(req: ReadingProgressRequest):
+    """Directly update a paper's reading status (TO_READ / READING / COMPLETED).
+
+    Accepts a full OpenAlex URL or a bare ID; resolves to the stored paper_id first.
+    """
+    status_clean = req.status.upper()
+    if status_clean not in ['TO_READ', 'READING', 'COMPLETED']:
+        raise HTTPException(status_code=400, detail="Invalid status.")
+    try:
+        conn = get_db_conn()
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT paper_id FROM papers WHERE paper_id = %s OR paper_id LIKE %s LIMIT 1",
+            (req.paper_id, f"%/{req.paper_id}")
+        )
+        row = cursor.fetchone()
+        if not row:
+            cursor.close()
+            conn.close()
+            raise HTTPException(status_code=404, detail=f"Paper '{req.paper_id}' not found in Lakebase.")
+        full_id = row[0]
+
+        progress_id = f"prog_{uuid.uuid4().hex[:12]}"
+        cursor.execute(
+            """
+            INSERT INTO reading_progress (progress_id, user_id, paper_id, status)
+            VALUES (%s, %s, %s, %s)
+            ON CONFLICT (user_id, paper_id) DO UPDATE SET status = EXCLUDED.status, updated_at = CURRENT_TIMESTAMP
+            """,
+            (progress_id, req.user_email, full_id, status_clean)
+        )
+        conn.commit()
+        cursor.close()
+        conn.close()
+        return {"status": "success", "paper_id": full_id, "new_status": status_clean}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("Failed to update reading progress")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.post("/api/chat/stream")
 async def chat_stream_endpoint(req: ChatRequest, request: Request):
     try:
@@ -1097,10 +1147,20 @@ async def run_agent(user_email: str, messages_payload: list, llm, openai_tools, 
                             "arguments": tc_args,
                         })
                         try:
-                            tool_output = await mcp_registry.call_tool(
-                                resolved, tc_args, tool_router, bearer_token=bearer_token
+                            tool_output = await asyncio.wait_for(
+                                mcp_registry.call_tool(
+                                    resolved, tc_args, tool_router, bearer_token=bearer_token
+                                ),
+                                timeout=TOOL_TIMEOUT_SECONDS,
                             )
                             tool_span.set_outputs({"output": tool_output, "status": "success"})
+                        except (asyncio.TimeoutError, TimeoutError) as tool_err:
+                            tool_output = json.dumps({
+                                "status": "error",
+                                "message": f"Tool '{resolved}' timed out after {TOOL_TIMEOUT_SECONDS}s.",
+                            })
+                            tool_span.set_outputs({"error": str(tool_err), "status": "error"})
+                            logger.warning("Tool '%s' timed out after %ss", resolved, TOOL_TIMEOUT_SECONDS)
                         except Exception as tool_err:
                             tool_output = json.dumps({"status": "error", "message": str(tool_err)})
                             tool_span.set_outputs({"error": str(tool_err), "status": "error"})

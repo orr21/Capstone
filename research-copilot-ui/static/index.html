@@ -1896,6 +1896,26 @@
       loadKanbanBoard();
     }
 
+    async function updatePaperStatus(paperId, status) {
+      try {
+        const res = await fetch('/api/reading_progress', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ user_email: currentUserEmail, paper_id: paperId, status: status })
+        });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          alert(err.detail || 'Failed to update paper status.');
+          return;
+        }
+        loadKanbanPlans();
+        loadKanbanBoard();
+      } catch (err) {
+        console.warn('Failed to update paper status:', err);
+        alert('Failed to update paper status. Check the connection and try again.');
+      }
+    }
+
     async function loadKanbanBoard() {
       try {
         const url = `/api/kanban/board?user_email=${encodeURIComponent(currentUserEmail)}${activePlanId ? `&plan_id=${encodeURIComponent(activePlanId)}` : ''}`;
@@ -1931,7 +1951,7 @@
               <div class="card-paper-title">${escHtml(ppr.title || 'Paper ' + cleanPid)}</div>
               <div class="card-ai-actions">
                 <a href="${paperUrl}" target="_blank" rel="noopener noreferrer" class="card-action-chip" style="text-decoration:none">Read Paper ↗</a>
-                <span class="card-action-chip" onclick="promptTool('Mark paper ${escHtml(cleanPid)} as READING')">Start Reading →</span>
+                <span class="card-action-chip" onclick="updatePaperStatus('${escHtml(cleanPid)}', 'READING')">Start Reading →</span>
               </div>
             </div>
           `;
@@ -1949,7 +1969,7 @@
               <div class="card-paper-title">${escHtml(ppr.title || 'Paper ' + cleanPid)}</div>
               <div class="card-ai-actions">
                 <a href="${paperUrl}" target="_blank" rel="noopener noreferrer" class="card-action-chip" style="text-decoration:none">Read Paper ↗</a>
-                <span class="card-action-chip" onclick="promptTool('Mark paper ${escHtml(cleanPid)} as COMPLETED')">Mark as Read ✓</span>
+                <span class="card-action-chip" onclick="updatePaperStatus('${escHtml(cleanPid)}', 'COMPLETED')">Mark as Read ✓</span>
               </div>
             </div>
           `;
@@ -2333,6 +2353,17 @@
       `;
     }
 
+    // Any tool card still "Running" when the stream ends gets marked as done so it never hangs
+    function completePendingToolCards(reason) {
+      document.querySelectorAll('.tool-card-header.running').forEach(header => {
+        const card = header.closest('.tool-card');
+        if (!card) return;
+        const nameEl = header.querySelector('.tool-name');
+        const name = nameEl ? nameEl.textContent : 'tool';
+        completeToolCard(card, name, reason || 'Stream ended before this tool returned.');
+      });
+    }
+
     function renderCitationLinks(html) {
       if (!html) return html;
       return html.replace(/\[(W\d+|https?:\/\/openalex\.org\/W\d+|paper_[a-zA-Z0-9_-]+)\]/g, (match, pid) => {
@@ -2490,6 +2521,7 @@
       } finally {
         isStreaming = false;
         sendBtn.disabled = false;
+        completePendingToolCards();
         loadDashboard();
         input.focus();
       }
@@ -2629,6 +2661,7 @@
         });
       } finally {
         isStreaming = false;
+        completePendingToolCards();
         input.focus();
       }
     }

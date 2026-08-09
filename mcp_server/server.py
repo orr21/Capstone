@@ -447,9 +447,18 @@ def generate_sequenced_reading_plan(user_id: str, goal_id: str = "", plan_title:
         """
         cursor.execute(sql, (plan_id, user_id, resolved_goal_id, plan_title, json.dumps(paper_ids)))
         conn.commit()
-        
-        # Set reading status of first paper to READING and rest to TO_READ
+
+        # Only create reading_progress rows for papers that actually exist in `papers`
+        # (FK constraint); missing papers stay in the plan but are skipped here.
+        existing_ids = set()
+        if paper_ids:
+            placeholders = ','.join(['%s'] * len(paper_ids))
+            cursor.execute(f"SELECT paper_id FROM papers WHERE paper_id IN ({placeholders})", paper_ids)
+            existing_ids = {r[0] for r in cursor.fetchall()}
+
         for idx, pid in enumerate(paper_ids):
+            if pid not in existing_ids:
+                continue
             st = 'READING' if idx == 0 else 'TO_READ'
             prog_id = f"prog_{uuid.uuid4().hex[:12]}"
             cursor.execute(
@@ -566,21 +575,34 @@ def count_papers(query: str = "", publication_year: int | None = None) -> dict:
 def update_reading_progress(user_id: str, paper_id: str, status: str) -> dict:
     """
     Updates reading progress for a paper ('TO_READ', 'READING', or 'COMPLETED').
+    Accepts a full OpenAlex URL or a bare ID (e.g. 'https://openalex.org/W...' or 'W...').
     """
     status_clean = status.upper()
     if status_clean not in ['TO_READ', 'READING', 'COMPLETED']:
         return {"status": "error", "message": "Invalid status."}
-        
+
     conn = get_db_conn()
     try:
         cursor = conn.cursor()
+        # Resolve to the stored paper_id (papers table uses full OpenAlex URLs)
+        cursor.execute(
+            "SELECT paper_id FROM papers WHERE paper_id = %s OR paper_id LIKE %s LIMIT 1",
+            (paper_id, f"%/{paper_id}")
+        )
+        row = cursor.fetchone()
+        if not row:
+            cursor.close()
+            conn.close()
+            return {"status": "error", "message": f"Paper '{paper_id}' not found in Lakebase."}
+        full_id = row[0]
+
         progress_id = f"prog_{uuid.uuid4().hex[:12]}"
         sql = """
             INSERT INTO reading_progress (progress_id, user_id, paper_id, status)
             VALUES (%s, %s, %s, %s)
             ON CONFLICT (user_id, paper_id) DO UPDATE SET status = EXCLUDED.status, updated_at = CURRENT_TIMESTAMP;
         """
-        cursor.execute(sql, (progress_id, user_id, paper_id, status_clean))
+        cursor.execute(sql, (progress_id, user_id, full_id, status_clean))
         conn.commit()
         return {"status": "success", "message": f"Updated status of {paper_id} to {status_clean}"}
     finally:

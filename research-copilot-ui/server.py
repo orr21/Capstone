@@ -844,37 +844,39 @@ def _aggregate_agent_events(events):
 async def _sse_encoder_with_run(events, user_email: str = "", last_user_msg: str = "", conversation_id: Optional[str] = None):
     """Wrap the agent generator in a single MLflow trace so each request is one debuggable session.
 
-    mlflow.start_trace() makes the whole request a single trace rooted at 'research_copilot_agent';
-    every LLM call (autolog) and MCP tool call is recorded as a nested span inside that one trace,
-    so you can grab a single trace link and share it for debugging. Tracing is best-effort: if it
-    fails, events still stream normally.
+    mlflow.start_span() as the root creates ONE trace per request ('research_copilot_agent');
+    every LLM call (autolog) and MCP tool call nests as a child span inside that trace, so you
+    can grab a single trace link and share it. Tracing is best-effort: if it fails, events still
+    stream normally.
     """
     collected: list = []
     final_text_parts: list = []
-    trace_active = False
-    try:
-        if os.environ.get("MLFLOW_EXPERIMENT_ID"):
-            try:
-                mlflow.start_trace(name="research_copilot_agent")
-                trace_active = True
-                try:
-                    mlflow.set_tags({
-                        "user": user_email,
-                        "app": "research-copilot-ui",
-                        "model": ENDPOINT_NAME,
-                    })
-                except Exception:
-                    pass
-                span = mlflow.get_current_active_span()
-                if span is not None:
-                    try:
-                        span.set_inputs({"user": user_email, "question": last_user_msg[:500]})
-                    except Exception:
-                        pass
-            except Exception as e:
-                logger.warning("Failed to start MLflow trace, continuing without tracing: %s", e)
-                trace_active = False
 
+    span_cm = None
+    agent_span = None
+    if os.environ.get("MLFLOW_EXPERIMENT_ID"):
+        try:
+            span_cm = mlflow.start_span(name="research_copilot_agent", span_type=SpanType.AGENT)
+            agent_span = span_cm.__enter__()
+            try:
+                agent_span.set_inputs({"user": user_email, "question": last_user_msg[:500]})
+            except Exception:
+                pass
+            try:
+                # Tag the trace; session_id links all turns of a conversation as one session
+                mlflow.update_current_trace(
+                    session_id=conversation_id,
+                    user=user_email,
+                    tags={"app": "research-copilot-ui", "model": ENDPOINT_NAME},
+                )
+            except Exception:
+                pass
+        except Exception as e:
+            logger.warning("Failed to start MLflow trace, continuing without tracing: %s", e)
+            span_cm = None
+            agent_span = None
+
+    try:
         async for event in events:
             collected.append(event)
             if event.get("type") == "chunk":
@@ -888,15 +890,13 @@ async def _sse_encoder_with_run(events, user_email: str = "", last_user_msg: str
                     final_text_parts.append(event.get("content", ""))
                 yield f"data: {json.dumps(event)}\n\n"
     finally:
-        if trace_active:
+        if agent_span is not None:
             try:
-                span = mlflow.get_current_active_span()
-                if span is not None:
-                    span.set_outputs(_aggregate_agent_events(collected))
+                agent_span.set_outputs(_aggregate_agent_events(collected))
             except Exception:
                 pass
             try:
-                mlflow.end_trace()
+                span_cm.__exit__(None, None, None)
             except Exception:
                 pass
 
@@ -911,7 +911,7 @@ async def run_agent(user_email: str, messages_payload: list, openai_client: Open
     """Orchestrate the chat agent: MCP tool discovery, LLM call, tool calls, synthesis.
 
     Yields SSE event dicts. MLflow tracing is handled by the caller (_sse_encoder_with_run)
-    via a single mlflow.start_trace() per request, so all LLM and tool spans nest inside
+    via a single root mlflow.start_span() per request, so all LLM and tool spans nest inside
     one trace per session.
     """
     try:

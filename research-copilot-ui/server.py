@@ -565,13 +565,11 @@ TOOL_CATEGORIES = {
     "search_research_papers": ("Search & Retrieval", "🔍", "Perform semantic vector search across research papers in Lakebase."),
     "find_papers_for_goal": ("Search & Retrieval", "🎯", "Match papers to student learning goals and retrieve relevant context."),
     "create_or_set_learning_goal": ("Planning & Progress", "🚀", "Create a new learning goal or switch your active study topic."),
-    "summarize_and_compare_papers": ("Analysis & Comparison", "⚖️", "Fetch raw abstracts and user notes to compare 2+ papers."),
+    "summarize_and_compare_papers": ("Analysis & Comparison", "⚖️", "Fetch raw abstracts to compare 2+ papers."),
     "count_papers": ("Analysis & Comparison", "🔢", "Count research papers matching keywords or publication year."),
     "generate_sequenced_reading_plan": ("Planning & Progress", "🗺️", "Generate and save a sequenced reading plan for a learning goal."),
     "track_progress_and_recommend": ("Planning & Progress", "💡", "Track reading progress and recommend the next logical paper."),
-    "save_paper_note": ("Notes & Collections", "📝", "Save personal research notes or summaries for a paper."),
-    "update_reading_progress": ("Notes & Collections", "📌", "Update paper reading status (TO_READ, READING, COMPLETED)."),
-    "add_paper_to_collection": ("Notes & Collections", "📂", "Add papers to curated user collections.")
+    "update_reading_progress": ("Planning & Progress", "📌", "Update paper reading status (TO_READ, READING, COMPLETED).")
 }
 
 @app.get("/api/config")
@@ -608,77 +606,134 @@ async def read_tools(request: Request):
         
     return {"mcp_servers": grouped, "total_tools": len(openai_tools)}
 
-class KanbanBoardCreate(BaseModel):
-    user_email: str
-    board_name: str
-
-@app.get("/api/kanban/boards")
-def list_kanban_boards(user_email: str):
-    """List custom topic kanban boards for user, seeding default boards on first access."""
+@app.get("/api/kanban/plans")
+def list_kanban_plans(user_email: str):
+    """List the user's reading plans to populate Kanban boards."""
     try:
         conn = get_db_conn()
         cursor = conn.cursor()
         cursor.execute(
-            "SELECT DISTINCT name FROM collections WHERE user_id = %s ORDER BY name ASC",
+            "SELECT plan_id, title, status, created_at FROM reading_plans WHERE user_id = %s ORDER BY created_at DESC",
             (user_email,)
         )
         rows = cursor.fetchall()
-        if not rows:
-            default_boards = ["Machine Learning", "Data Engineering", "Transformers"]
-            for bname in default_boards:
-                cid = f"col_{uuid.uuid4().hex[:12]}"
-                cursor.execute(
-                    "INSERT INTO collections (collection_id, user_id, name) VALUES (%s, %s, %s) ON CONFLICT DO NOTHING",
-                    (cid, user_email, bname)
-                )
-            conn.commit()
-            boards = default_boards
+        cursor.close()
+        conn.close()
+        return {
+            "plans": [
+                {"plan_id": r[0], "title": r[1], "status": r[2], "created_at": r[3].isoformat() if r[3] else ""}
+                for r in rows
+            ]
+        }
+    except Exception as e:
+        logger.warning("Failed to list kanban plans: %s", e)
+        return {"plans": []}
+
+@app.get("/api/kanban/board")
+def get_kanban_board(user_email: str, plan_id: str = ""):
+    """Return a reading plan's papers bucketed by reading_progress status."""
+    try:
+        conn = get_db_conn()
+        cursor = conn.cursor()
+        if plan_id:
+            cursor.execute(
+                "SELECT plan_id, title, sequenced_paper_ids FROM reading_plans WHERE user_id = %s AND plan_id = %s LIMIT 1",
+                (user_email, plan_id)
+            )
         else:
-            boards = [r[0] for r in rows]
+            cursor.execute(
+                "SELECT plan_id, title, sequenced_paper_ids FROM reading_plans WHERE user_id = %s AND status = 'ACTIVE' ORDER BY created_at DESC LIMIT 1",
+                (user_email,)
+            )
+        plan_row = cursor.fetchone()
+        if not plan_row:
+            cursor.close()
+            conn.close()
+            return {"plan": None, "to_read": [], "reading": [], "completed": []}
+
+        plan_id_val, plan_title, seq = plan_row
+        paper_ids = seq if isinstance(seq, list) else json.loads(seq or "[]")
+
+        status_map = {}  # paper_id -> (title, status)
+        if paper_ids:
+            placeholders = ','.join(['%s'] * len(paper_ids))
+            cursor.execute(
+                f"SELECT rp.paper_id, p.title, rp.status FROM reading_progress rp JOIN papers p ON rp.paper_id = p.paper_id WHERE rp.user_id = %s AND rp.paper_id IN ({placeholders})",
+                (user_email, *paper_ids)
+            )
+            rows = cursor.fetchall()
+            for r in rows:
+                status_map[r[0]] = (r[1], r[2])
 
         cursor.close()
         conn.close()
-        return {"boards": boards}
-    except Exception as e:
-        logger.warning("Failed to list kanban boards: %s", e)
-        return {"boards": ["Machine Learning", "Data Engineering", "Transformers"]}
 
-@app.post("/api/kanban/boards")
-def create_kanban_board(req: KanbanBoardCreate):
-    """Create a new topic kanban board."""
+        to_read, reading, completed = [], [], []
+        for pid in paper_ids:
+            title_v, status_v = status_map.get(pid, ("", "TO_READ"))
+            item = {"paper_id": pid, "title": title_v}
+            if status_v == 'COMPLETED':
+                completed.append(item)
+            elif status_v == 'READING':
+                reading.append(item)
+            else:
+                to_read.append(item)
+
+        return {
+            "plan": {"plan_id": plan_id_val, "title": plan_title},
+            "to_read": to_read,
+            "reading": reading,
+            "completed": completed,
+        }
+    except Exception as e:
+        logger.exception("get_kanban_board failed")
+        return {"plan": None, "to_read": [], "reading": [], "completed": []}
+
+class KanbanChatSaveRequest(BaseModel):
+    user_email: str
+    messages: List[Dict[str, str]]
+
+@app.get("/api/kanban/chat/messages")
+def list_kanban_chat_messages(user_email: str):
+    """Return the user's persisted Reading Assistant chat (no session grouping)."""
     try:
         conn = get_db_conn()
         cursor = conn.cursor()
-        cid = f"col_{uuid.uuid4().hex[:12]}"
         cursor.execute(
-            "INSERT INTO collections (collection_id, user_id, name) VALUES (%s, %s, %s) ON CONFLICT DO NOTHING",
-            (cid, req.user_email, req.board_name)
+            "SELECT role, content FROM kanban_chat_messages WHERE user_id = %s ORDER BY created_at ASC LIMIT 200",
+            (user_email,)
         )
-        conn.commit()
+        rows = cursor.fetchall()
         cursor.close()
         conn.close()
-        return {"status": "success", "board_name": req.board_name}
+        return {"messages": [{"role": r[0], "content": r[1]} for r in rows]}
     except Exception as e:
-        logger.exception("Failed to create kanban board")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.warning("Failed to list kanban chat messages: %s", e)
+        return {"messages": []}
 
-@app.delete("/api/kanban/boards/{board_name}")
-def delete_kanban_board(board_name: str, user_email: str):
-    """Delete a topic kanban board and associated collection entries."""
+@app.post("/api/kanban/chat/messages")
+def save_kanban_chat_messages(req: KanbanChatSaveRequest):
+    """Persist Reading Assistant chat messages for a user (quick conversations, no sessions)."""
     try:
         conn = get_db_conn()
         cursor = conn.cursor()
-        cursor.execute(
-            "DELETE FROM collections WHERE user_id = %s AND name ILIKE %s",
-            (user_email, board_name)
-        )
+        for m in req.messages:
+            role = str(m.get("role", "user"))
+            content = str(m.get("content", "")).strip()
+            if not content:
+                continue
+            mid = f"kmsg_{uuid.uuid4().hex[:12]}"
+            cursor.execute(
+                "INSERT INTO kanban_chat_messages (message_id, user_id, role, content) VALUES (%s, %s, %s, %s)",
+                (mid, req.user_email, role, content)
+            )
         conn.commit()
         cursor.close()
         conn.close()
-        return {"status": "success", "message": f"Deleted kanban board '{board_name}'"}
+        return {"status": "success"}
     except Exception as e:
-        logger.exception("Failed to delete kanban board")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("Failed to save kanban chat messages")
+        return {"status": "error", "message": str(e)}
 
 @app.post("/api/chat/stream")
 async def chat_stream_endpoint(req: ChatRequest, request: Request):
@@ -1033,6 +1088,27 @@ async def run_agent(user_email: str, messages_payload: list, openai_client: Open
                     "role": "user",
                     "content": recovery,
                 })
+
+        # If we exhausted max_turns while calling tools, force one final synthesis call
+        # (tools disabled) so the user always receives an answer instead of nothing.
+        yield {"type": "status", "content": "Synthesizing final answer..."}
+        try:
+            final_response = openai_client.chat.completions.create(
+                model=ENDPOINT_NAME,
+                messages=messages_payload,
+                stream=False
+            )
+            final_text = (final_response.choices[0].message.content or "").strip()
+            if final_text:
+                yield {"type": "chunk", "content": final_text}
+        except Exception as final_err:
+            logger.exception("Final synthesis call failed")
+            yield {
+                "type": "error",
+                "content": "Something went wrong while answering.",
+                "detail": str(final_err),
+                "hint": "Retry, and check the app logs for the full traceback.",
+            }
 
         yield {"type": "done"}
 

@@ -5,7 +5,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Research Copilot — Databricks AI</title>
-  <meta name="description" content="Semantic research paper search, note-taking, and reading-progress tracking powered by Databricks Lakebase and LLMs.">
+  <meta name="description" content="Semantic research paper search and reading-progress tracking powered by Databricks Lakebase and LLMs.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=EB+Garamond:wght@300;400&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
@@ -777,306 +777,11 @@
       transition: transform 0.25s ease;
     }
 
-    /* ── Right Inspector Panel ──────────────────────────────────────────────── */
-    .right-inspector {
-      width: 320px;
-      background: var(--canvas-soft);
-      border-left: 1px solid var(--hairline-strong);
-      display: flex;
-      flex-direction: column;
-      gap: var(--sp-md);
-      padding: var(--sp-base);
-      overflow-y: auto;
-      flex-shrink: 0;
-    }
-
-    .inspector-section {
-      display: flex;
-      flex-direction: column;
-      gap: var(--sp-xs);
-    }
-
-    .inspector-title {
-      font-size: 12px;
-      font-weight: 600;
-      letter-spacing: 0.6px;
-      text-transform: uppercase;
-      color: var(--muted);
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-    }
-
-    .inspector-badge {
-      font-size: 10px;
-      font-weight: 600;
-      background: var(--surface-strong);
-      color: var(--ink);
-      padding: 2px 6px;
-      border-radius: var(--r-xs);
-      border: 1px solid var(--hairline);
-    }
-
-    .inspector-card {
-      background: var(--surface-card);
-      border: 1px solid var(--hairline);
-      border-radius: var(--r-lg);
-      padding: var(--sp-base);
-      display: flex;
-      flex-direction: column;
-      gap: var(--sp-xs);
-      box-shadow: 0 2px 8px rgba(0,0,0,0.02);
-    }
-
+    /* ── Shared empty-state text ────────────────────────────────────────────── */
     .inspector-empty {
       font-size: 12px;
       color: var(--muted-soft);
       font-style: italic;
-    }
-
-    .plan-title-text {
-      font-size: 14px;
-      font-weight: 600;
-      color: var(--ink);
-    }
-
-    .plan-seq-list {
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
-      margin-top: 4px;
-    }
-
-    .plan-seq-item {
-      font-size: 12px;
-      color: var(--ink-secondary);
-      background: var(--canvas);
-      padding: 4px 8px;
-      border-radius: var(--r-xs);
-      font-family: 'Courier New', monospace;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-
-    .rec-paper-title {
-      font-size: 13px;
-      font-weight: 600;
-      color: var(--ink);
-      line-height: 1.35;
-    }
-
-    .rec-paper-reason {
-      font-size: 11px;
-      color: var(--muted);
-    }
-
-    .rec-action-btn {
-      align-self: flex-start;
-      margin-top: 4px;
-      font-size: 11px;
-      font-weight: 600;
-      color: var(--on-primary);
-      background: var(--ink);
-      border: none;
-      border-radius: var(--r-pill);
-      padding: 4px 10px;
-      cursor: pointer;
-      transition: opacity 0.15s ease;
-    }
-
-    .rec-action-btn:hover { opacity: 0.88; }
-
-    .user-rank-pill {
-      font-size: 12px;
-      font-weight: 600;
-      color: var(--ink);
-      background: var(--surface-strong);
-      padding: 6px 10px;
-      border-radius: var(--r-md);
-      text-align: center;
-      border: 1px solid var(--hairline);
-    }
-
-    .stats-counter-grid {
-      display: grid;
-      grid-template-columns: repeat(4, 1fr);
-      gap: 4px;
-      margin-top: 6px;
-    }
-
-    .stat-box {
-      background: var(--canvas);
-      border-radius: var(--r-sm);
-      padding: 6px 4px;
-      text-align: center;
-    }
-
-    .stat-num {
-      display: block;
-      font-size: 15px;
-      font-weight: 600;
-      color: var(--ink);
-    }
-
-    .stat-lbl {
-      display: block;
-      font-size: 9px;
-      text-transform: uppercase;
-      letter-spacing: 0.4px;
-      color: var(--muted);
-    }
-
-    .badges-row {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 6px;
-      margin-top: 6px;
-    }
-
-    .badge-chip {
-      font-size: 11px;
-      background: var(--canvas);
-      border: 1px solid var(--hairline);
-      border-radius: var(--r-pill);
-      padding: 3px 8px;
-      display: flex;
-      align-items: center;
-      gap: 4px;
-      color: var(--ink);
-    }
-
-    .guardrails-card {
-      background: #f0fdf4;
-      border-color: rgba(22, 163, 74, 0.25);
-    }
-
-    .guardrails-header {
-      font-size: 12px;
-      font-weight: 600;
-      color: #15803d;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-    }
-
-    .guardrails-status-dot {
-      font-size: 10px;
-      background: #dcfce7;
-      color: #166534;
-      padding: 1px 6px;
-      border-radius: var(--r-xs);
-      font-weight: 600;
-    }
-
-    .guardrails-desc {
-      font-size: 11px;
-      color: #166534;
-      line-height: 1.35;
-    }
-
-    /* ── Kanban Reading Board ────────────────────────────────────────────── */
-    .kanban-board-card {
-      display: flex;
-      flex-direction: column;
-      gap: var(--sp-xs);
-    }
-
-    .kanban-column {
-      background: var(--canvas);
-      border: 1px solid var(--hairline);
-      border-radius: var(--r-md);
-      padding: 6px;
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
-    }
-
-    .kanban-col-header {
-      font-size: 11px;
-      font-weight: 600;
-      color: var(--ink);
-      border-bottom: 1px solid var(--hairline);
-      padding-bottom: 4px;
-      margin-bottom: 2px;
-    }
-
-    .kanban-col-list {
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
-      min-height: 24px;
-    }
-
-    .kanban-paper-item {
-      background: var(--surface-card);
-      border: 1px solid var(--hairline);
-      border-radius: var(--r-xs);
-      padding: 6px;
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
-    }
-
-    .kanban-paper-id {
-      font-size: 11px;
-      font-weight: 600;
-      font-family: 'Courier New', monospace;
-      color: var(--ink);
-    }
-
-    .kanban-btn {
-      font-size: 10px;
-      font-weight: 600;
-      background: var(--ink);
-      color: var(--on-primary);
-      border: none;
-      border-radius: var(--r-xs);
-      padding: 2px 6px;
-      cursor: pointer;
-      align-self: flex-start;
-      transition: opacity 0.15s ease;
-    }
-
-    .kanban-btn:hover { opacity: 0.88; }
-
-    /* ── Goal Selector ───────────────────────────────────────────────────── */
-    .goal-select-dropdown {
-      width: 100%;
-      background: var(--canvas);
-      border: 1px solid var(--hairline-strong);
-      border-radius: var(--r-md);
-      padding: 6px 10px;
-      font-size: 13px;
-      font-family: var(--font-body);
-      color: var(--ink);
-      outline: none;
-      cursor: pointer;
-    }
-    .goal-select-dropdown:focus {
-      border-color: var(--ink);
-    }
-    .goal-switch-row {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      margin-top: 4px;
-    }
-    .goal-add-btn {
-      background: var(--ink);
-      color: var(--on-primary);
-      border: none;
-      border-radius: var(--r-md);
-      padding: 6px 10px;
-      font-size: 12px;
-      font-weight: 600;
-      cursor: pointer;
-      white-space: nowrap;
-    }
-    .goal-active-title {
-      font-size: 14px;
-      font-weight: 600;
-      color: var(--ink);
     }
 
     /* ── Interactive Citation Badges ───────────────────────────────────────── */
@@ -1919,7 +1624,7 @@
       <!-- Welcome state (hidden once first message is sent) -->
       <div class="welcome-block" id="welcome-block">
         <h1>Your research,<br>amplified.</h1>
-        <p>Ask anything about research papers in Lakebase — semantic search, notes, reading progress, and more.</p>
+        <p>Ask anything about research papers in Lakebase — semantic search, reading plans, and progress.</p>
 
         <div class="welcome-suggestions" role="list" aria-label="Suggested questions">
           <button class="suggestion-pill" role="listitem" onclick="useSuggestion(this)">
@@ -1945,7 +1650,7 @@
         <textarea
           id="chat-input"
           class="composer-input"
-          placeholder="Ask about papers, notes, or reading progress…"
+          placeholder="Ask about papers or reading progress…"
           rows="1"
           aria-label="Message input"
           onkeydown="handleKey(event)"
@@ -1969,71 +1674,6 @@
 
   </main>
 
-  <!-- Right Inspector / Workspace Panel -->
-  <aside class="right-inspector" id="right-inspector">
-    <div class="inspector-section">
-      <div class="inspector-title">
-        <span>Active Learning Goal</span>
-      </div>
-      <div id="inspector-goal-body" class="inspector-card">
-        <div class="goal-active-title" id="active-goal-display">Loading goal...</div>
-        <div class="goal-switch-row">
-          <select id="goal-selector-dropdown" class="goal-select-dropdown" onchange="handleGoalSelectChange(this)">
-            <!-- Options populated dynamically -->
-          </select>
-          <button class="goal-add-btn" onclick="promptNewGoal()">+ New</button>
-        </div>
-      </div>
-    </div>
-
-    <div class="inspector-section">
-      <div class="inspector-title">
-        <span>Active Reading Plan</span>
-        <span class="inspector-badge" id="plan-badge">ACTIVE</span>
-      </div>
-      <div id="inspector-plan-body" class="inspector-card">
-        <div class="inspector-empty">No active reading plan. Ask the Copilot to create one!</div>
-      </div>
-    </div>
-
-    <div class="inspector-section">
-      <div class="inspector-title">
-        <span>Next Recommendation</span>
-      </div>
-      <div id="inspector-rec-body" class="inspector-card">
-        <div class="inspector-empty">No pending recommendations</div>
-      </div>
-    </div>
-
-    <div class="inspector-section">
-      <div class="inspector-title">
-        <span>Reading Kanban Board</span>
-      </div>
-      <div id="inspector-kanban-body" class="inspector-card kanban-board-card">
-        <div class="kanban-column">
-          <div class="kanban-col-header">To Read</div>
-          <div id="kanban-to-read" class="kanban-col-list">
-            <div class="inspector-empty">No papers</div>
-          </div>
-        </div>
-
-        <div class="kanban-column">
-          <div class="kanban-col-header">Currently Reading</div>
-          <div id="kanban-reading" class="kanban-col-list">
-            <div class="inspector-empty">No papers</div>
-          </div>
-        </div>
-
-        <div class="kanban-column">
-          <div class="kanban-col-header">Read</div>
-          <div id="kanban-completed" class="kanban-col-list">
-            <div class="inspector-empty">No papers</div>
-          </div>
-        </div>
-      </div>
-    </div>
-  </aside>
-
   </div> <!-- End .app-viewport -->
 
   <!-- Full-screen Kanban Workspace View -->
@@ -2043,9 +1683,8 @@
       <div class="kanban-board-main-area">
         <div class="topic-bar-header">
           <div class="topic-pills-row" id="topic-pills-row">
-            <!-- Dynamically rendered topic pills with delete CRUD -->
+            <!-- Dynamically rendered reading plan pills -->
           </div>
-          <button class="add-topic-btn" onclick="promptNewTopicBoard()">+ Add Topic Board</button>
         </div>
 
         <div class="kanban-columns-grid">
@@ -2165,7 +1804,8 @@
     let messageHistory      = [];
     let isStreaming         = false;
     let activeConversationId= null;
-    let activeTopicBoard    = 'Machine Learning';
+    let activePlanId        = '';
+    let kanbanMessageHistory = [];
     let currentUserEmail    = localStorage.getItem('active_user_email') || 'maria.garcia@mit.edu';
     let currentUserName     = localStorage.getItem('active_user_name')  || 'Maria Garcia';
 
@@ -2186,8 +1826,9 @@
         kanbanView.classList.add('active');
         btnKanban.classList.add('active');
         btnChat.classList.remove('active');
-        loadTopicBoards();
-        renderTopicKanbanWorkspace();
+        loadKanbanPlans();
+        loadKanbanBoard();
+        loadKanbanChat();
       }
     }
 
@@ -2195,7 +1836,7 @@
     window.addEventListener('DOMContentLoaded', async () => {
       // Update User Profile UI
       updateUserProfileUI();
-      loadTopicBoards();
+      loadKanbanPlans();
 
       // Load model name
       try {
@@ -2211,157 +1852,62 @@
       // Fetch tools list
       loadTools();
 
-      // Fetch user conversations & dashboard
+      // Fetch user conversations & kanban board
       loadConversations();
-      loadDashboard();
+      loadKanbanBoard();
 
       // Auto-resize textarea on every input
       const input = document.getElementById('chat-input');
       input.addEventListener('input', () => autoResize(input));
     });
 
-    /* ── Live Dashboard & Right Inspector ─────────────────────────────────── */
+    /* ── Kanban Workspace (driven by reading plans + reading progress) ────── */
     async function loadDashboard() {
+      loadKanbanPlans();
+      loadKanbanBoard();
+    }
+
+    async function loadKanbanPlans() {
+      const row = document.getElementById('topic-pills-row');
+      if (!row) return;
       try {
-        const res = await fetch(`/api/dashboard?user_email=${encodeURIComponent(currentUserEmail)}`);
+        const res = await fetch(`/api/kanban/plans?user_email=${encodeURIComponent(currentUserEmail)}`);
         const data = await res.json();
-        
-        // 1. Active Plan
-        const planContainer = document.getElementById('inspector-plan-body');
-        const planBadge     = document.getElementById('plan-badge');
-        if (data.active_plan && data.active_plan.paper_ids && data.active_plan.paper_ids.length > 0) {
-          if (planBadge) planBadge.textContent = 'ACTIVE';
-          let itemsHtml = data.active_plan.paper_ids.map((pid, idx) => `
-            <div class="plan-seq-item">${idx + 1}. [${escHtml(pid)}]</div>
-          `).join('');
-          planContainer.innerHTML = `
-            <div class="plan-title-text">🎯 ${escHtml(data.active_plan.title)}</div>
-            <div class="plan-seq-list">${itemsHtml}</div>
-          `;
-        } else {
-          if (planBadge) planBadge.textContent = 'NONE';
-          planContainer.innerHTML = `<div class="inspector-empty">No active reading plan. Ask Copilot to generate one!</div>`;
+        const plans = data.plans || [];
+        if (plans.length > 0 && !plans.some(p => p.plan_id === activePlanId)) {
+          const active = plans.find(p => p.status === 'ACTIVE') || plans[0];
+          activePlanId = active ? active.plan_id : '';
         }
-
-        // 0. Goal Selector
-        const activeGoalEl = document.getElementById('active-goal-display');
-        const goalDropdown = document.getElementById('goal-selector-dropdown');
-        if (data.active_goal) {
-          if (activeGoalEl) activeGoalEl.textContent = '🎯 ' + data.active_goal.title;
-        } else {
-          if (activeGoalEl) activeGoalEl.textContent = '🎯 No Active Goal';
-        }
-
-        if (goalDropdown && data.goals) {
-          let opts = data.goals.map(g => `
-            <option value="${escHtml(g.title)}" ${g.is_active ? 'selected' : ''}>
-              ${escHtml(g.title)}
-            </option>
-          `).join('');
-          if (!data.goals.length) {
-            opts = `<option value="Machine Learning">Machine Learning</option><option value="Data Engineering">Data Engineering</option>`;
-          }
-          goalDropdown.innerHTML = opts;
-        }
-        const recContainer = document.getElementById('inspector-rec-body');
-        if (data.recommended_paper) {
-          const rec = data.recommended_paper;
-          recContainer.innerHTML = `
-            <div class="rec-paper-title">📖 [${escHtml(rec.paper_id)}] ${escHtml(rec.title)}</div>
-            <div class="rec-paper-reason">Reason: ${escHtml(rec.reason)}</div>
-            <button class="rec-action-btn" onclick="promptTool('Mark paper ${escHtml(rec.paper_id)} as COMPLETED')">Mark as Read ✓</button>
-          `;
-        } else {
-          recContainer.innerHTML = `<div class="inspector-empty">No pending paper recommendations</div>`;
-        }
-
-        // Populate Kanban columns
-        const trCol = document.getElementById('kanban-to-read');
-        const rdCol = document.getElementById('kanban-reading');
-        const cmCol = document.getElementById('kanban-completed');
-
-        if (trCol) {
-          const toReadPapers = (data.to_read_papers && data.to_read_papers.length)
-            ? data.to_read_papers
-            : ((data.active_plan && data.active_plan.paper_ids && data.active_plan.paper_ids.length > 1)
-                ? data.active_plan.paper_ids.slice(1).map(pid => ({ paper_id: pid, title: '' }))
-                : []);
-          trCol.innerHTML = toReadPapers.length
-            ? toReadPapers.map(ppr => `
-                <div class="kanban-paper-item">
-                  <span class="kanban-paper-id">[${escHtml(ppr.paper_id)}] ${escHtml(ppr.title || '')}</span>
-                  <button class="kanban-btn" onclick="promptTool('Mark paper ${escHtml(ppr.paper_id)} as READING')">Start Reading →</button>
-                </div>
-              `).join('')
-            : `<div class="inspector-empty">Empty</div>`;
-        }
-
-        if (rdCol) {
-          const readingPapers = (data.reading_papers && data.reading_papers.length)
-            ? data.reading_papers
-            : (data.recommended_paper ? [data.recommended_paper] : []);
-          const readingPaper = readingPapers[0];
-          rdCol.innerHTML = readingPaper ? `
-            <div class="kanban-paper-item">
-              <span class="kanban-paper-id">[${escHtml(readingPaper.paper_id)}] ${escHtml(readingPaper.title || '')}</span>
-              <button class="kanban-btn" onclick="promptTool('Mark paper ${escHtml(readingPaper.paper_id)} as COMPLETED')">Mark as Read ✓</button>
-            </div>
-          ` : `<div class="inspector-empty">Empty</div>`;
-        }
-
-        if (cmCol) {
-          const completedPapers = data.completed_papers || [];
-          cmCol.innerHTML = completedPapers.length
-            ? completedPapers.map(ppr => `<div class="kanban-paper-item"><span class="kanban-paper-id">✓ [${escHtml(ppr.paper_id)}] ${escHtml(ppr.title || '')}</span></div>`).join('')
-            : `<div class="inspector-empty">Empty</div>`;
-        }
-
-        // 5. Full-Screen Kanban Workspace render
-        renderTopicKanbanWorkspace(data);
-
+        row.innerHTML = plans.length ? plans.map(p => `
+          <div class="topic-pill-wrapper ${p.plan_id === activePlanId ? 'active' : ''}">
+            <button class="topic-pill" onclick="selectPlan('${escHtml(p.plan_id)}')" title="${escHtml(p.title)}">
+              ${escHtml(p.title || p.plan_id)}
+            </button>
+          </div>
+        `).join('') : `<span class="topic-pill-wrapper"><span class="inspector-empty">No reading plans yet. Ask Copilot to create one in the chat.</span></span>`;
       } catch (err) {
-        console.warn('Failed to load dashboard:', err);
+        console.warn('Failed to load kanban plans:', err);
       }
     }
 
-    async function handleGoalSelectChange(selectEl) {
-      const title = selectEl.value;
-      if (!title) return;
+    function selectPlan(planId) {
+      activePlanId = planId;
+      loadKanbanPlans();
+      loadKanbanBoard();
+    }
+
+    async function loadKanbanBoard() {
       try {
-        await fetch('/api/goals/activate', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ user_email: currentUserEmail, title: title })
-        });
-        loadDashboard();
-        promptTool(`Switch my learning goal to '${title}' and adapt my reading recommendations`);
+        const url = `/api/kanban/board?user_email=${encodeURIComponent(currentUserEmail)}${activePlanId ? `&plan_id=${encodeURIComponent(activePlanId)}` : ''}`;
+        const res = await fetch(url);
+        const data = await res.json();
+        renderKanbanColumns(data);
       } catch (err) {
-        console.warn('Failed to switch goal:', err);
+        console.warn('Failed to load kanban board:', err);
       }
     }
 
-    async function promptNewGoal() {
-      const title = prompt('Enter your new learning goal (e.g. Data Engineering for Cloud Systems):');
-      if (!title || !title.trim()) return;
-      try {
-        await fetch('/api/goals/activate', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ user_email: currentUserEmail, title: title.trim() })
-        });
-        loadDashboard();
-        promptTool(`Set my new learning goal to '${title.trim()}' and adapt my reading plan`);
-      } catch (err) {
-        console.warn('Failed to create goal:', err);
-      }
-    }
-
-    let latestDashboardData = null;
-
-    function renderTopicKanbanWorkspace(data) {
-      if (data) latestDashboardData = data;
-      const dash = data || latestDashboardData;
-      
+    function renderKanbanColumns(board) {
       const trWrapper = document.getElementById('kw-cards-to-read');
       const rdWrapper = document.getElementById('kw-cards-reading');
       const cmWrapper = document.getElementById('kw-cards-read');
@@ -2370,18 +1916,13 @@
       const rdCount = document.getElementById('kw-count-reading');
       const cmCount = document.getElementById('kw-count-read');
 
-      if (!dash) return;
+      const toRead = (board && board.to_read) || [];
+      const reading = (board && board.reading) || [];
+      const completed = (board && board.completed) || [];
 
-      // 1. To Read cards (from the active reading plan / reading_progress)
-      let toReadPapers = (dash.to_read_papers && dash.to_read_papers.length)
-        ? dash.to_read_papers
-        : ((dash.active_plan && dash.active_plan.paper_ids && dash.active_plan.paper_ids.length > 1)
-            ? dash.active_plan.paper_ids.slice(1).map(pid => ({ paper_id: pid, title: 'Paper ' + pid }))
-            : []);
-      
-      if (trCount) trCount.textContent = toReadPapers.length;
+      if (trCount) trCount.textContent = toRead.length;
       if (trWrapper) {
-        trWrapper.innerHTML = toReadPapers.length ? toReadPapers.map(ppr => {
+        trWrapper.innerHTML = toRead.length ? toRead.map(ppr => {
           const cleanPid = (ppr.paper_id || '').replace(/^https?:\/\/openalex\.org\//, '');
           const paperUrl = cleanPid.startsWith('W') ? `https://openalex.org/${cleanPid}` : `#`;
           return `
@@ -2397,36 +1938,27 @@
         }).join('') : `<div class="inspector-empty">No papers in queue</div>`;
       }
 
-      // 2. Currently Reading cards
-      let readingPapers = (dash.reading_papers && dash.reading_papers.length)
-        ? dash.reading_papers
-        : (dash.recommended_paper ? [dash.recommended_paper] : []);
-      const readingPaper = readingPapers[0];
-      if (rdCount) rdCount.textContent = readingPapers.length;
+      if (rdCount) rdCount.textContent = reading.length;
       if (rdWrapper) {
-        if (readingPaper) {
-          const cleanPid = (readingPaper.paper_id || '').replace(/^https?:\/\/openalex\.org\//, '');
+        rdWrapper.innerHTML = reading.length ? reading.map(ppr => {
+          const cleanPid = (ppr.paper_id || '').replace(/^https?:\/\/openalex\.org\//, '');
           const paperUrl = cleanPid.startsWith('W') ? `https://openalex.org/${cleanPid}` : `#`;
-          rdWrapper.innerHTML = `
+          return `
             <div class="kanban-card-full">
               <span class="card-paper-pid">[${escHtml(cleanPid)}]</span>
-              <div class="card-paper-title">${escHtml(readingPaper.title || 'Paper ' + cleanPid)}</div>
+              <div class="card-paper-title">${escHtml(ppr.title || 'Paper ' + cleanPid)}</div>
               <div class="card-ai-actions">
                 <a href="${paperUrl}" target="_blank" rel="noopener noreferrer" class="card-action-chip" style="text-decoration:none">Read Paper ↗</a>
                 <span class="card-action-chip" onclick="promptTool('Mark paper ${escHtml(cleanPid)} as COMPLETED')">Mark as Read ✓</span>
               </div>
             </div>
           `;
-        } else {
-          rdWrapper.innerHTML = `<div class="inspector-empty">No active paper being read</div>`;
-        }
+        }).join('') : `<div class="inspector-empty">No active paper being read</div>`;
       }
 
-      // 3. Read cards
-      const completedPapers = dash.completed_papers || [];
-      if (cmCount) cmCount.textContent = completedPapers.length;
+      if (cmCount) cmCount.textContent = completed.length;
       if (cmWrapper) {
-        cmWrapper.innerHTML = completedPapers.length ? completedPapers.map(ppr => {
+        cmWrapper.innerHTML = completed.length ? completed.map(ppr => {
           const cleanPid = (ppr.paper_id || '').replace(/^https?:\/\/openalex\.org\//, '');
           const paperUrl = cleanPid.startsWith('W') ? `https://openalex.org/${cleanPid}` : `#`;
           return `
@@ -2440,67 +1972,6 @@
             </div>
           `;
         }).join('') : `<div class="inspector-empty">No papers read yet</div>`;
-      }
-    }
-
-    async function loadTopicBoards() {
-      const row = document.getElementById('topic-pills-row');
-      if (!row) return;
-      try {
-        const res = await fetch(`/api/kanban/boards?user_email=${encodeURIComponent(currentUserEmail)}`);
-        const data = await res.json();
-        const boards = data.boards || [];
-        if (boards.length > 0 && !boards.includes(activeTopicBoard)) {
-          activeTopicBoard = boards[0];
-        }
-        row.innerHTML = boards.map(b => `
-          <div class="topic-pill-wrapper ${b === activeTopicBoard ? 'active' : ''}">
-            <button class="topic-pill" onclick="selectTopicBoard('${escHtml(b)}')">${escHtml(b)}</button>
-            <button class="topic-delete-btn" onclick="deleteTopicBoard(event, '${escHtml(b)}')" title="Delete board '${escHtml(b)}'">✕</button>
-          </div>
-        `).join('');
-      } catch (err) {
-        console.warn('Failed to load topic boards:', err);
-      }
-    }
-
-    function selectTopicBoard(topic) {
-      activeTopicBoard = topic;
-      loadTopicBoards();
-      renderTopicKanbanWorkspace();
-    }
-
-    async function deleteTopicBoard(event, boardName) {
-      if (event) event.stopPropagation();
-      if (!confirm(`Are you sure you want to delete the '${boardName}' topic board?`)) return;
-      try {
-        await fetch(`/api/kanban/boards/${encodeURIComponent(boardName)}?user_email=${encodeURIComponent(currentUserEmail)}`, {
-          method: 'DELETE'
-        });
-        if (activeTopicBoard === boardName) {
-          activeTopicBoard = "";
-        }
-        await loadTopicBoards();
-        renderTopicKanbanWorkspace();
-      } catch (err) {
-        console.warn('Failed to delete topic board:', err);
-      }
-    }
-
-    async function promptNewTopicBoard() {
-      const name = prompt('Enter new topic board name (e.g. Reinforcement Learning):');
-      if (!name || !name.trim()) return;
-      try {
-        await fetch('/api/kanban/boards', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ user_email: currentUserEmail, board_name: name.trim() })
-        });
-        activeTopicBoard = name.trim();
-        loadTopicBoards();
-        renderTopicKanbanWorkspace();
-      } catch (err) {
-        console.warn('Failed to create topic board:', err);
       }
     }
 
@@ -2527,10 +1998,13 @@
       updateUserProfileUI();
       toggleUserModal(false);
       
-      // Reload conversations & dashboard for new profile
+      // Reload conversations & kanban for new profile
       activeConversationId = null;
+      activePlanId = '';
+      kanbanMessageHistory = [];
       loadConversations();
       loadDashboard();
+      loadKanbanChat();
       resetChatArea();
     }
 
@@ -2646,7 +2120,7 @@
       container.innerHTML = `
         <div class="welcome-block" id="welcome-block">
           <h1>Your research,<br>amplified.</h1>
-          <p>Ask anything about research papers in Lakebase — semantic search, notes, reading progress, and more.</p>
+          <p>Ask anything about research papers in Lakebase — semantic search, reading plans, and progress.</p>
           <div class="welcome-suggestions" role="list" aria-label="Suggested questions">
             <button class="suggestion-pill" role="listitem" onclick="useSuggestion(this)">
               Search transformer architecture papers
@@ -2739,9 +2213,7 @@
         'summarize_and_compare_papers': 'Compare the top 2 papers in Lakebase',
         'generate_sequenced_reading_plan': 'Generate a 3-step reading plan for deep learning',
         'track_progress_and_recommend': 'What paper should I read next based on my progress?',
-        'save_paper_note': 'Save a note on paper paper_1: Great breakdown of attention mechanisms',
-        'update_reading_progress': 'Mark paper_1 as COMPLETED',
-        'add_paper_to_collection': 'Add paper_1 to my Transformers collection'
+        'update_reading_progress': 'Mark paper_1 as COMPLETED'
       };
       return samples[origName] || '';
     }
@@ -2877,41 +2349,6 @@
       btn.textContent = shown ? 'View output' : 'Hide output';
     }
 
-    /* ── Reading Assistant sidepanel mirroring ────────────────────────────── */
-    function appendSidepanelUser(text) {
-      const c = document.getElementById('kanban-chat-messages');
-      if (!c || !text) return;
-      const uRow = document.createElement('div');
-      uRow.className = 'msg-row user';
-      uRow.innerHTML = `<div class="msg-bubble user">${escHtml(text)}</div>`;
-      c.appendChild(uRow);
-      c.scrollTop = c.scrollHeight;
-    }
-
-    function ensureSidepanelAI() {
-      const c = document.getElementById('kanban-chat-messages');
-      if (!c) return;
-      const aiBubbles = c.querySelectorAll('.msg-bubble.ai');
-      const last = aiBubbles[aiBubbles.length - 1];
-      if (last && last.dataset.pending === '1') return;
-      const aRow = document.createElement('div');
-      aRow.className = 'msg-row ai';
-      aRow.innerHTML = `<div class="msg-avatar ai">RC</div><div class="msg-bubble ai" data-pending="1"><span class="status-pulse"></span> Thinking…</div>`;
-      c.appendChild(aRow);
-      c.scrollTop = c.scrollHeight;
-    }
-
-    function setSidepanelAI(content) {
-      const c = document.getElementById('kanban-chat-messages');
-      if (!c) return;
-      const aiBubbles = c.querySelectorAll('.msg-bubble.ai');
-      const last = aiBubbles[aiBubbles.length - 1];
-      if (!last) return;
-      delete last.dataset.pending;
-      last.innerHTML = renderCitationLinks(marked.parse(content || ''));
-      c.scrollTop = c.scrollHeight;
-    }
-
     /* ── Send message ────────────────────────────────────────────────────── */
     async function sendMessage() {
       if (isStreaming) return;
@@ -2935,10 +2372,6 @@
       container.appendChild(uRow);
 
       messageHistory.push({ role: 'user', content: text });
-
-      // Mirror user message + a pending AI bubble into the Reading Assistant sidepanel
-      appendSidepanelUser(text);
-      ensureSidepanelAI();
 
       // AI bubble shell
       const { row: aRow, bubble: aBubble } = makeMsgRow('ai');
@@ -3043,12 +2476,10 @@
 
         if (fullText) {
           messageHistory.push({ role: 'assistant', content: fullText });
-          setSidepanelAI(fullText);
         }
 
       } catch (err) {
         streamErrored = true;
-        setSidepanelAI("⚠️ Couldn't reach the agent. Please try again.");
         statusLine.innerHTML = errorCardHTML({
           content: "Couldn't reach the agent.",
           detail:  err.message || String(err),
@@ -3064,7 +2495,35 @@
       }
     }
 
-    /* ── Kanban Sidepanel Chat Handlers ──────────────────────────────────── */
+    /* ── Kanban Sidepanel Chat Handlers (persistent messages, no sessions) ── */
+    async function loadKanbanChat() {
+      const container = document.getElementById('kanban-chat-messages');
+      if (!container) return;
+      try {
+        const res = await fetch(`/api/kanban/chat/messages?user_email=${encodeURIComponent(currentUserEmail)}`);
+        const data = await res.json();
+        kanbanMessageHistory = (data.messages || []).slice(-50);
+        const greeting = container.querySelector('.msg-row');
+        container.innerHTML = greeting ? greeting.outerHTML : '';
+        for (const m of kanbanMessageHistory) {
+          if (m.role === 'user') {
+            const uRow = document.createElement('div');
+            uRow.className = 'msg-row user';
+            uRow.innerHTML = `<div class="msg-bubble user">${escHtml(m.content)}</div>`;
+            container.appendChild(uRow);
+          } else {
+            const aRow = document.createElement('div');
+            aRow.className = 'msg-row ai';
+            aRow.innerHTML = `<div class="msg-avatar ai">RC</div><div class="msg-bubble ai">${renderCitationLinks(marked.parse(m.content))}</div>`;
+            container.appendChild(aRow);
+          }
+        }
+        container.scrollTop = container.scrollHeight;
+      } catch (err) {
+        console.warn('Failed to load kanban chat:', err);
+      }
+    }
+
     function handleKanbanChatKeyDown(event) {
       if (event.key === 'Enter' && !event.shiftKey) {
         event.preventDefault();
@@ -3076,13 +2535,102 @@
       const input = document.getElementById('kanban-chat-input');
       const text = input ? input.value.trim() : '';
       if (!text || isStreaming) return;
-
       input.value = '';
       input.style.height = 'auto';
 
-      // Sync text to main chat input & trigger sendMessage (which mirrors to sidepanel)
-      document.getElementById('chat-input').value = text;
-      await sendMessage();
+      const container = document.getElementById('kanban-chat-messages');
+      if (!container) return;
+
+      const uRow = document.createElement('div');
+      uRow.className = 'msg-row user';
+      uRow.innerHTML = `<div class="msg-bubble user">${escHtml(text)}</div>`;
+      container.appendChild(uRow);
+
+      const aRow = document.createElement('div');
+      aRow.className = 'msg-row ai';
+      aRow.innerHTML = `<div class="msg-avatar ai">RC</div><div class="msg-bubble ai"><span class="status-pulse"></span> Thinking…</div>`;
+      container.appendChild(aRow);
+      container.scrollTop = container.scrollHeight;
+
+      const aiBubble = aRow.querySelector('.msg-bubble.ai');
+      isStreaming = true;
+      let fullText = '';
+      let streamErrored = false;
+
+      // Build payload from the kanban chat's own history (no conversation/session)
+      const history = kanbanMessageHistory.slice(-20);
+      const payloadMessages = [...history, { role: 'user', content: text }];
+
+      try {
+        const resp = await fetch('/api/chat/stream', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            messages: payloadMessages,
+            conversation_id: null,
+            user_email: currentUserEmail
+          }),
+        });
+        if (!resp.ok) throw new Error(`HTTP ${resp.status} ${resp.statusText}`);
+
+        const reader  = resp.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer    = '';
+
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n\n');
+          buffer = lines.pop();
+          for (const line of lines) {
+            if (!line.startsWith('data: ')) continue;
+            let data;
+            try { data = JSON.parse(line.slice(6)); } catch (_) { continue; }
+            if (data.type === 'chunk') {
+              fullText += data.content;
+              aiBubble.innerHTML = renderCitationLinks(marked.parse(fullText));
+            } else if (data.type === 'error') {
+              streamErrored = true;
+              aiBubble.innerHTML = errorCardHTML(data);
+            }
+            container.scrollTop = container.scrollHeight;
+          }
+        }
+
+        if (fullText) {
+          kanbanMessageHistory.push({ role: 'user', content: text }, { role: 'assistant', content: fullText });
+          // Persist the exchange (messages only, no session)
+          try {
+            await fetch('/api/kanban/chat/messages', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                user_email: currentUserEmail,
+                messages: [{ role: 'user', content: text }, { role: 'assistant', content: fullText }]
+              })
+            });
+          } catch (persistErr) {
+            console.warn('Failed to persist kanban chat:', persistErr);
+          }
+        } else if (!streamErrored) {
+          aiBubble.innerHTML = '⚠️ No response received. Please try again.';
+        }
+
+        // Refresh the board in case the agent moved cards across columns
+        loadKanbanPlans();
+        loadKanbanBoard();
+      } catch (err) {
+        streamErrored = true;
+        aiBubble.innerHTML = errorCardHTML({
+          content: "Couldn't reach the agent.",
+          detail:  err.message || String(err),
+          hint:    'Check your connection and try again.',
+        });
+      } finally {
+        isStreaming = false;
+        input.focus();
+      }
     }
   </script>
 

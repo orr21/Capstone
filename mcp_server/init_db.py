@@ -91,23 +91,6 @@ TABLES_SQL = [
     );
     """,
     """
-    CREATE TABLE IF NOT EXISTS collections (
-        collection_id VARCHAR(255) PRIMARY KEY,
-        user_id VARCHAR(255) NOT NULL,
-        name VARCHAR(255) NOT NULL,
-        description TEXT,
-        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-    );
-    """,
-    """
-    CREATE TABLE IF NOT EXISTS collection_papers (
-        collection_id VARCHAR(255) REFERENCES collections(collection_id) ON DELETE CASCADE,
-        paper_id VARCHAR(255) REFERENCES papers(paper_id) ON DELETE CASCADE,
-        added_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-        PRIMARY KEY (collection_id, paper_id)
-    );
-    """,
-    """
     CREATE TABLE IF NOT EXISTS reading_progress (
         progress_id VARCHAR(255) PRIMARY KEY,
         user_id VARCHAR(255) NOT NULL,
@@ -129,10 +112,10 @@ TABLES_SQL = [
     );
     """,
     """
-    CREATE TABLE IF NOT EXISTS notes (
-        note_id VARCHAR(255) PRIMARY KEY,
+    CREATE TABLE IF NOT EXISTS kanban_chat_messages (
+        message_id VARCHAR(255) PRIMARY KEY,
         user_id VARCHAR(255) NOT NULL,
-        paper_id VARCHAR(255) REFERENCES papers(paper_id) ON DELETE CASCADE,
+        role VARCHAR(50) NOT NULL,
         content TEXT NOT NULL,
         created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
     );

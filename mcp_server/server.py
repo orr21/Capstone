@@ -78,8 +78,12 @@ TABLES_SQL = [
         title VARCHAR(255) NOT NULL,
         description TEXT,
         target_date DATE,
+        is_active BOOLEAN DEFAULT TRUE,
         created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
     );
+    """,
+    """
+    ALTER TABLE learning_goals ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE;
     """,
     """
     CREATE TABLE IF NOT EXISTS papers (
@@ -111,23 +115,6 @@ TABLES_SQL = [
     );
     """,
     """
-    CREATE TABLE IF NOT EXISTS collections (
-        collection_id VARCHAR(255) PRIMARY KEY,
-        user_id VARCHAR(255) NOT NULL,
-        name VARCHAR(255) NOT NULL,
-        description TEXT,
-        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-    );
-    """,
-    """
-    CREATE TABLE IF NOT EXISTS collection_papers (
-        collection_id VARCHAR(255) REFERENCES collections(collection_id) ON DELETE CASCADE,
-        paper_id VARCHAR(255) REFERENCES papers(paper_id) ON DELETE CASCADE,
-        added_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-        PRIMARY KEY (collection_id, paper_id)
-    );
-    """,
-    """
     CREATE TABLE IF NOT EXISTS reading_progress (
         progress_id VARCHAR(255) PRIMARY KEY,
         user_id VARCHAR(255) NOT NULL,
@@ -149,10 +136,10 @@ TABLES_SQL = [
     );
     """,
     """
-    CREATE TABLE IF NOT EXISTS notes (
-        note_id VARCHAR(255) PRIMARY KEY,
+    CREATE TABLE IF NOT EXISTS kanban_chat_messages (
+        message_id VARCHAR(255) PRIMARY KEY,
         user_id VARCHAR(255) NOT NULL,
-        paper_id VARCHAR(255) REFERENCES papers(paper_id) ON DELETE CASCADE,
+        role VARCHAR(50) NOT NULL,
         content TEXT NOT NULL,
         created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
     );
@@ -336,7 +323,7 @@ def _is_placeholder_paper_id(paper_id: str) -> bool:
 @mcp.tool
 def summarize_and_compare_papers(paper_ids: List[str]) -> str:
     """
-    Retrieves full metadata, abstracts, and user notes for 2 to 5 paper IDs for comparative research analysis.
+    Retrieves full metadata and abstracts for 2 to 5 paper IDs for comparative research analysis.
     """
     if not paper_ids:
         return "Please provide at least one paper_id to summarize or compare."
@@ -360,13 +347,6 @@ def summarize_and_compare_papers(paper_ids: List[str]) -> str:
         cursor.execute(sql, real_ids)
         rows = cursor.fetchall()
         
-        # Fetch associated user notes
-        cursor.execute(
-            f"SELECT paper_id, content FROM notes WHERE paper_id IN ({placeholders})", real_ids
-        )
-        note_rows = cursor.fetchall()
-        notes_by_paper = {n[0]: n[1] for n in note_rows}
-        
         found_ids = {r[0] for r in rows}
         missing_ids = [pid for pid in real_ids if pid not in found_ids]
         
@@ -383,14 +363,12 @@ def summarize_and_compare_papers(paper_ids: List[str]) -> str:
         output = ["### Paper Comparison Data\n"]
         for r in rows:
             pid, title, abstract, year, citations, doi, url = r
-            user_note = notes_by_paper.get(pid, "No user notes recorded.")
             output.append(
                 f"--- \n"
                 f"**ID:** `[{pid}]` \n"
                 f"**Title:** {title} ({year}) \n"
                 f"**Citations:** {citations} | **DOI:** {doi or 'N/A'} | **URL:** {url or 'N/A'} \n"
-                f"**Abstract:** {abstract or 'No abstract text available.'} \n"
-                f"**User Notes:** {user_note}"
+                f"**Abstract:** {abstract or 'No abstract text available.'}"
             )
         return "\n\n".join(output)
     except Exception as e:
@@ -499,52 +477,6 @@ def generate_sequenced_reading_plan(user_id: str, goal_id: str = "", plan_title:
         conn.close()
 
 @mcp.tool
-def add_paper_to_collection(user_id: str, collection_name: str, paper_id: str) -> dict:
-    """
-    Adds a paper to a user's collection, creating the collection if it doesn't already exist.
-    """
-    conn = get_db_conn()
-    try:
-        cursor = conn.cursor()
-        # Find or create collection
-        cursor.execute(
-            "SELECT collection_id FROM collections WHERE user_id = %s AND name ILIKE %s LIMIT 1",
-            (user_id, collection_name)
-        )
-        coll_row = cursor.fetchone()
-        if coll_row:
-            coll_id = coll_row[0]
-        else:
-            coll_id = f"coll_{uuid.uuid4().hex[:12]}"
-            cursor.execute(
-                "INSERT INTO collections (collection_id, user_id, name, description) VALUES (%s, %s, %s, %s)",
-                (coll_id, user_id, collection_name, f"Collection for {collection_name}")
-            )
-        
-        cursor.execute(
-            """
-            INSERT INTO collection_papers (collection_id, paper_id)
-            VALUES (%s, %s)
-            ON CONFLICT DO NOTHING
-            """,
-            (coll_id, paper_id)
-        )
-        conn.commit()
-        return {
-            "status": "success",
-            "collection_id": coll_id,
-            "collection_name": collection_name,
-            "paper_id": paper_id,
-            "message": f"Added paper '{paper_id}' to collection '{collection_name}'."
-        }
-    except Exception as e:
-        logger.exception("add_paper_to_collection failed")
-        return {"status": "error", "message": str(e)}
-    finally:
-        cursor.close()
-        conn.close()
-
-@mcp.tool
 def track_progress_and_recommend(user_id: str, goal_id: str = "") -> str:
     """
     Tracks a student's current reading progress across papers and recommends the next logical paper to read.
@@ -626,27 +558,6 @@ def count_papers(query: str = "", publication_year: int | None = None) -> dict:
     except Exception as e:
         logger.exception("Count failed")
         return {"status": "error", "message": str(e)}
-    finally:
-        cursor.close()
-        conn.close()
-
-@mcp.tool
-def save_paper_note(user_id: str, paper_id: str, note_content: str) -> dict:
-    """
-    Saves a personal research note or summary for a paper in Lakebase.
-    """
-    conn = get_db_conn()
-    try:
-        cursor = conn.cursor()
-        note_id = f"note_{user_id}_{paper_id[:10]}"
-        sql = """
-            INSERT INTO notes (note_id, user_id, paper_id, content)
-            VALUES (%s, %s, %s, %s)
-            ON CONFLICT (note_id) DO UPDATE SET content = EXCLUDED.content;
-        """
-        cursor.execute(sql, (note_id, user_id, paper_id, note_content))
-        conn.commit()
-        return {"status": "success", "message": f"Saved note for paper {paper_id}"}
     finally:
         cursor.close()
         conn.close()

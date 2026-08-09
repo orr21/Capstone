@@ -347,6 +347,7 @@ def run_incremental_pipeline():
         cursor = "*"
         page_count = 0
         current_batch = []
+        total_fetched_topic = 0
 
         while cursor:
             data = fetch_openalex_page(filter_clause, cursor=cursor, per_page=PER_PAGE)
@@ -357,6 +358,8 @@ def run_incremental_pipeline():
             if not page_results:
                 break
 
+            total_fetched_topic += len(page_results)
+
             # Filter out papers already committed to Lakebase
             new_papers = [p for p in page_results if str(p.get("id")) not in existing_pids]
             current_batch.extend(new_papers)
@@ -366,7 +369,7 @@ def run_incremental_pipeline():
             for p in new_papers:
                 existing_pids.add(str(p.get("id")))
 
-            print(f"  Page {page_count}: {len(page_results)} fetched, {len(new_papers)} new (Pending batch: {len(current_batch)} / {BATCH_WRITE_SIZE})")
+            print(f"  Page {page_count}: {len(page_results)} fetched ({total_fetched_topic:,} / {total_available:,} total matching), {len(new_papers)} new (Pending batch: {len(current_batch)} / {BATCH_WRITE_SIZE})")
 
             # Immediately ingest & embed when batch reaches threshold
             if len(current_batch) >= BATCH_WRITE_SIZE:

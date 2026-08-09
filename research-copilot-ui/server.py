@@ -534,15 +534,76 @@ async def read_tools(request: Request):
         
     return {"mcp_servers": grouped, "total_tools": len(openai_tools)}
 
+class KanbanBoardCreate(BaseModel):
+    user_email: str
+    board_name: str
+
+@app.get("/api/kanban/boards")
+def list_kanban_boards(user_email: str):
+    """List custom topic kanban boards for user."""
+    try:
+        conn = get_db_conn()
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT DISTINCT name FROM collections WHERE user_id = %s ORDER BY name ASC",
+            (user_email,)
+        )
+        rows = cursor.fetchall()
+        cursor.close()
+        conn.close()
+        boards = [r[0] for r in rows]
+        if "Machine Learning" not in boards:
+            boards.insert(0, "Machine Learning")
+        if "Data Engineering" not in boards:
+            boards.append("Data Engineering")
+        return {"boards": boards}
+    except Exception as e:
+        logger.warning("Failed to list kanban boards: %s", e)
+        return {"boards": ["Machine Learning", "Data Engineering", "Transformers"]}
+
+@app.post("/api/kanban/boards")
+def create_kanban_board(req: KanbanBoardCreate):
+    """Create a new topic kanban board."""
+    try:
+        conn = get_db_conn()
+        cursor = conn.cursor()
+        cid = f"col_{uuid.uuid4().hex[:12]}"
+        cursor.execute(
+            "INSERT INTO collections (collection_id, user_id, name) VALUES (%s, %s, %s) ON CONFLICT DO NOTHING",
+            (cid, req.user_email, req.board_name)
+        )
+        conn.commit()
+        cursor.close()
+        conn.close()
+        return {"status": "success", "board_name": req.board_name}
+    except Exception as e:
+        logger.exception("Failed to create kanban board")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.delete("/api/kanban/boards/{board_name}")
+def delete_kanban_board(board_name: str, user_email: str):
+    """Delete a topic kanban board and associated collection entries."""
+    try:
+        conn = get_db_conn()
+        cursor = conn.cursor()
+        cursor.execute(
+            "DELETE FROM collections WHERE user_id = %s AND name = %s",
+            (user_email, board_name)
+        )
+        conn.commit()
+        cursor.close()
+        conn.close()
+        return {"status": "success", "message": f"Deleted kanban board '{board_name}'"}
+    except Exception as e:
+        logger.exception("Failed to delete kanban board")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.post("/api/chat/stream")
 async def chat_stream_endpoint(req: ChatRequest, request: Request):
     try:
         user_email = req.user_email or request.headers.get("x-forwarded-user", "demo_user@workspace.com")
         conversation_id = req.conversation_id
 
-        # X-Forwarded-Access-Token is injected by Databricks Apps on every
-        # authenticated request — it's the user's own OAuth token and is the
-        # most reliable credential for calling other Databricks Apps.
         forwarded_token = request.headers.get("x-forwarded-access-token", "")
         bearer_token = _resolve_bearer_token(forwarded_token)
         if not bearer_token:
@@ -554,17 +615,33 @@ async def chat_stream_endpoint(req: ChatRequest, request: Request):
         if conversation_id and last_user_text:
             save_chat_message(conversation_id, "user", last_user_text)
 
+        # Query active learning goal for user
+        active_goal_str = "Active Goal: General Research"
+        try:
+            conn = get_db_conn()
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT title, description FROM learning_goals WHERE user_id = %s AND is_active = TRUE LIMIT 1",
+                (user_email,)
+            )
+            g_row = cursor.fetchone()
+            if g_row:
+                active_goal_str = f"Active Goal: '{g_row[0]}'" + (f" ({g_row[1]})" if g_row[1] else "")
+            cursor.close()
+            conn.close()
+        except Exception as ge:
+            logger.warning("Failed to fetch active goal for system prompt: %s", ge)
+
         messages_payload = [
             {
                 "role": "system",
                 "content": (
                     f"You are Research Copilot, an AI research assistant helping {user_email}. "
-                    "You have access to tools defined in the 'tools' parameter. "
-                    "Always call the appropriate tool when asked to search papers, compare research, generate reading plans, "
-                    "track progress, generate quizzes, save notes, or add papers to collections. "
+                    f"The user's {active_goal_str}. "
+                    "Always tailor your paper searches, reading plans, and recommendations to help the user achieve this active goal. "
                     "When referencing research papers in your final answer, ALWAYS include explicit citations "
                     "in the format: `[paper_id]` \"Title\" (Year) — for example `[W7172556967]` \"Learning the Pareto Frontier\" (2026). "
-                    "To confirm a paper read and award achievement badges, encourage the user to take a 3-question quiz using `generate_paper_quiz(paper_id)`. "
+                    "To confirm a paper read, encourage the user to take a 3-question quiz using `generate_paper_quiz(paper_id)`. "
                     "If the user asks to create a new study plan or switch learning goals while an active reading plan exists, "
                     "ask for user confirmation before overwriting their active study plan. "
                     "Do not invent tool names or arguments. Wait for tool results, then provide a helpful synthesis."

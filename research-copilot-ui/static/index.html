@@ -251,17 +251,50 @@
       overflow-x: auto;
     }
 
-    .topic-pill {
+    /* ── Topic Board Pills with Delete Action ───────────────────────────── */
+    .topic-pill-wrapper {
+      display: flex;
+      align-items: center;
       background: var(--surface-card);
       border: 1px solid var(--hairline);
       border-radius: var(--r-pill);
-      padding: 6px 14px;
-      font-size: 13px;
-      font-weight: 500;
-      color: var(--ink-secondary);
-      cursor: pointer;
-      white-space: nowrap;
+      padding-right: 6px;
       transition: all 0.15s ease;
+    }
+
+    .topic-pill-wrapper.active {
+      background: var(--ink);
+      border-color: var(--ink);
+    }
+
+    .topic-pill-wrapper .topic-pill {
+      border: none;
+      background: transparent;
+      padding: 6px 10px 6px 14px;
+    }
+
+    .topic-pill-wrapper.active .topic-pill {
+      color: var(--on-primary);
+    }
+
+    .topic-delete-btn {
+      background: transparent;
+      border: none;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+      padding: 2px 6px;
+      border-radius: 50%;
+      transition: color 0.15s ease;
+    }
+
+    .topic-pill-wrapper.active .topic-delete-btn {
+      color: var(--muted-soft);
+    }
+
+    .topic-delete-btn:hover {
+      color: var(--semantic-error) !important;
     }
 
     .topic-pill:hover {
@@ -1779,15 +1812,15 @@
     <div class="nav-right">
       <div class="nav-tabs">
         <button class="nav-tab-btn active" id="tab-btn-chat" onclick="switchNavTab('chat')">
-          💬 Research Chat
+          Research Chat
         </button>
         <button class="nav-tab-btn" id="tab-btn-kanban" onclick="switchNavTab('kanban')">
-          📋 Kanban Workspace
+          Kanban Workspace
         </button>
       </div>
 
       <button class="tools-trigger-btn" onclick="toggleToolsModal(true)" aria-label="View available tools">
-        <span>🛠️ Tools</span>
+        <span>Tools</span>
         <span class="tools-count-badge" id="tools-count">...</span>
       </button>
       <div class="status-dot" id="status-indicator" aria-live="polite">
@@ -1905,7 +1938,7 @@
   <aside class="right-inspector" id="right-inspector">
     <div class="inspector-section">
       <div class="inspector-title">
-        <span>🎯 Active Learning Goal</span>
+        <span>Active Learning Goal</span>
       </div>
       <div id="inspector-goal-body" class="inspector-card">
         <div class="goal-active-title" id="active-goal-display">Loading goal...</div>
@@ -1920,7 +1953,7 @@
 
     <div class="inspector-section">
       <div class="inspector-title">
-        <span>🎯 Active Reading Plan</span>
+        <span>Active Reading Plan</span>
         <span class="inspector-badge" id="plan-badge">ACTIVE</span>
       </div>
       <div id="inspector-plan-body" class="inspector-card">
@@ -1930,7 +1963,7 @@
 
     <div class="inspector-section">
       <div class="inspector-title">
-        <span>💡 Next Recommendation</span>
+        <span>Next Recommendation</span>
       </div>
       <div id="inspector-rec-body" class="inspector-card">
         <div class="inspector-empty">No pending recommendations</div>
@@ -1939,25 +1972,25 @@
 
     <div class="inspector-section">
       <div class="inspector-title">
-        <span>📋 Reading Kanban Board</span>
+        <span>Reading Kanban Board</span>
       </div>
       <div id="inspector-kanban-body" class="inspector-card kanban-board-card">
         <div class="kanban-column">
-          <div class="kanban-col-header">📋 To Read</div>
+          <div class="kanban-col-header">To Read</div>
           <div id="kanban-to-read" class="kanban-col-list">
             <div class="inspector-empty">No papers</div>
           </div>
         </div>
 
         <div class="kanban-column">
-          <div class="kanban-col-header">📖 Reading</div>
+          <div class="kanban-col-header">Reading</div>
           <div id="kanban-reading" class="kanban-col-list">
             <div class="inspector-empty">No papers</div>
           </div>
         </div>
 
         <div class="kanban-column">
-          <div class="kanban-col-header">🏆 Completed</div>
+          <div class="kanban-col-header">Completed</div>
           <div id="kanban-completed" class="kanban-col-list">
             <div class="inspector-empty">No papers</div>
           </div>
@@ -1972,9 +2005,7 @@
   <div class="kanban-workspace-view" id="kanban-workspace-view">
     <div class="topic-bar-header">
       <div class="topic-pills-row" id="topic-pills-row">
-        <button class="topic-pill active" onclick="selectTopicBoard('Machine Learning')">🤖 Machine Learning</button>
-        <button class="topic-pill" onclick="selectTopicBoard('Data Engineering')">💻 Data Engineering</button>
-        <button class="topic-pill" onclick="selectTopicBoard('Transformers')">⚡ Transformers</button>
+        <!-- Dynamically rendered topic pills with delete CRUD -->
       </div>
       <button class="add-topic-btn" onclick="promptNewTopicBoard()">+ Add Topic Board</button>
     </div>
@@ -1982,7 +2013,7 @@
     <div class="kanban-columns-grid">
       <div class="kanban-main-col">
         <div class="kanban-main-col-title">
-          <span>📋 To Read</span>
+          <span>To Read</span>
           <span class="col-count-badge" id="kw-count-to-read">0</span>
         </div>
         <div class="kanban-cards-wrapper" id="kw-cards-to-read">
@@ -1992,7 +2023,7 @@
 
       <div class="kanban-main-col">
         <div class="kanban-main-col-title">
-          <span>📖 Currently Reading</span>
+          <span>Currently Reading</span>
           <span class="col-count-badge" id="kw-count-reading">0</span>
         </div>
         <div class="kanban-cards-wrapper" id="kw-cards-reading">
@@ -2002,7 +2033,7 @@
 
       <div class="kanban-main-col">
         <div class="kanban-main-col-title">
-          <span>🏆 Mastered</span>
+          <span>Mastered</span>
           <span class="col-count-badge" id="kw-count-mastered">0</span>
         </div>
         <div class="kanban-cards-wrapper" id="kw-cards-mastered">
@@ -2089,6 +2120,7 @@
         kanbanView.classList.add('active');
         btnKanban.classList.add('active');
         btnChat.classList.remove('active');
+        loadTopicBoards();
         renderTopicKanbanWorkspace();
       }
     }
@@ -2097,6 +2129,7 @@
     window.addEventListener('DOMContentLoaded', async () => {
       // Update User Profile UI
       updateUserProfileUI();
+      loadTopicBoards();
 
       // Load model name
       try {
@@ -2314,25 +2347,63 @@
       }
     }
 
+    async function loadTopicBoards() {
+      const row = document.getElementById('topic-pills-row');
+      if (!row) return;
+      try {
+        const res = await fetch(`/api/kanban/boards?user_email=${encodeURIComponent(currentUserEmail)}`);
+        const data = await res.json();
+        const boards = data.boards || ["Machine Learning", "Data Engineering", "Transformers"];
+        if (!boards.includes(activeTopicBoard)) {
+          activeTopicBoard = boards[0] || "Machine Learning";
+        }
+        row.innerHTML = boards.map(b => `
+          <div class="topic-pill-wrapper ${b === activeTopicBoard ? 'active' : ''}">
+            <button class="topic-pill" onclick="selectTopicBoard('${escHtml(b)}')">${escHtml(b)}</button>
+            <button class="topic-delete-btn" onclick="deleteTopicBoard('${escHtml(b)}')" title="Delete board '${escHtml(b)}'">✕</button>
+          </div>
+        `).join('');
+      } catch (err) {
+        console.warn('Failed to load topic boards:', err);
+      }
+    }
+
     function selectTopicBoard(topic) {
       activeTopicBoard = topic;
-      document.querySelectorAll('.topic-pill').forEach(btn => {
-        btn.classList.toggle('active', btn.textContent.includes(topic));
-      });
+      loadTopicBoards();
       renderTopicKanbanWorkspace();
     }
 
-    function promptNewTopicBoard() {
+    async function deleteTopicBoard(boardName) {
+      if (!confirm(`Are you sure you want to delete the '${boardName}' topic board?`)) return;
+      try {
+        await fetch(`/api/kanban/boards/${encodeURIComponent(boardName)}?user_email=${encodeURIComponent(currentUserEmail)}`, {
+          method: 'DELETE'
+        });
+        if (activeTopicBoard === boardName) {
+          activeTopicBoard = "Machine Learning";
+        }
+        loadTopicBoards();
+        renderTopicKanbanWorkspace();
+      } catch (err) {
+        console.warn('Failed to delete topic board:', err);
+      }
+    }
+
+    async function promptNewTopicBoard() {
       const name = prompt('Enter new topic board name (e.g. Reinforcement Learning):');
-      if (!name) return;
-      const row = document.getElementById('topic-pills-row');
-      if (row) {
-        const btn = document.createElement('button');
-        btn.className = 'topic-pill active';
-        btn.onclick = () => selectTopicBoard(name);
-        btn.textContent = `📌 ${name}`;
-        row.appendChild(btn);
-        selectTopicBoard(name);
+      if (!name || !name.trim()) return;
+      try {
+        await fetch('/api/kanban/boards', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ user_email: currentUserEmail, board_name: name.trim() })
+        });
+        activeTopicBoard = name.trim();
+        loadTopicBoards();
+        renderTopicKanbanWorkspace();
+      } catch (err) {
+        console.warn('Failed to create topic board:', err);
       }
     }
 

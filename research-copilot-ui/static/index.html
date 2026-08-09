@@ -919,6 +919,45 @@
 
     .kanban-btn:hover { opacity: 0.88; }
 
+    /* ── Goal Selector ───────────────────────────────────────────────────── */
+    .goal-select-dropdown {
+      width: 100%;
+      background: var(--canvas);
+      border: 1px solid var(--hairline-strong);
+      border-radius: var(--r-md);
+      padding: 6px 10px;
+      font-size: 13px;
+      font-family: var(--font-body);
+      color: var(--ink);
+      outline: none;
+      cursor: pointer;
+    }
+    .goal-select-dropdown:focus {
+      border-color: var(--ink);
+    }
+    .goal-switch-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-top: 4px;
+    }
+    .goal-add-btn {
+      background: var(--ink);
+      color: var(--on-primary);
+      border: none;
+      border-radius: var(--r-md);
+      padding: 6px 10px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .goal-active-title {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--ink);
+    }
+
     /* ── Interactive Citation Badges & Quizzes ───────────────────────────── */
     .paper-citation-tag {
       display: inline-flex;
@@ -1866,6 +1905,21 @@
   <aside class="right-inspector" id="right-inspector">
     <div class="inspector-section">
       <div class="inspector-title">
+        <span>🎯 Active Learning Goal</span>
+      </div>
+      <div id="inspector-goal-body" class="inspector-card">
+        <div class="goal-active-title" id="active-goal-display">Loading goal...</div>
+        <div class="goal-switch-row">
+          <select id="goal-selector-dropdown" class="goal-select-dropdown" onchange="handleGoalSelectChange(this)">
+            <!-- Options populated dynamically -->
+          </select>
+          <button class="goal-add-btn" onclick="promptNewGoal()">+ New</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="inspector-section">
+      <div class="inspector-title">
         <span>🎯 Active Reading Plan</span>
         <span class="inspector-badge" id="plan-badge">ACTIVE</span>
       </div>
@@ -1908,34 +1962,6 @@
             <div class="inspector-empty">No papers</div>
           </div>
         </div>
-      </div>
-    </div>
-
-    <div class="inspector-section">
-      <div class="inspector-title">
-        <span>🏆 Achievements & Ranks</span>
-      </div>
-      <div id="inspector-gamification-body" class="inspector-card">
-        <div class="user-rank-pill" id="user-level-badge">Level 1 — Knowledge Explorer 🌱</div>
-        <div class="stats-counter-grid">
-          <div class="stat-box"><span class="stat-num" id="stat-completed">0</span><span class="stat-lbl">Read</span></div>
-          <div class="stat-box"><span class="stat-num" id="stat-reading">0</span><span class="stat-lbl">Reading</span></div>
-          <div class="stat-box"><span class="stat-num" id="stat-to-read">0</span><span class="stat-lbl">Queued</span></div>
-          <div class="stat-box"><span class="stat-num" id="stat-notes">0</span><span class="stat-lbl">Notes</span></div>
-        </div>
-        <div class="badges-row" id="badges-row">
-          <!-- Badges -->
-        </div>
-      </div>
-    </div>
-
-    <div class="inspector-section">
-      <div class="inspector-card guardrails-card">
-        <div class="guardrails-header">
-          <span>🛡️ Safety & Guardrails</span>
-          <span class="guardrails-status-dot">Active</span>
-        </div>
-        <p class="guardrails-desc">Study Plan Guardrails Active — User confirmation required before modifying active reading plans.</p>
       </div>
     </div>
   </aside>
@@ -2118,7 +2144,26 @@
           planContainer.innerHTML = `<div class="inspector-empty">No active reading plan. Ask Copilot to generate one!</div>`;
         }
 
-        // 2. Next Recommendation & Kanban Board
+        // 0. Goal Selector
+        const activeGoalEl = document.getElementById('active-goal-display');
+        const goalDropdown = document.getElementById('goal-selector-dropdown');
+        if (data.active_goal) {
+          if (activeGoalEl) activeGoalEl.textContent = '🎯 ' + data.active_goal.title;
+        } else {
+          if (activeGoalEl) activeGoalEl.textContent = '🎯 No Active Goal';
+        }
+
+        if (goalDropdown && data.goals) {
+          let opts = data.goals.map(g => `
+            <option value="${escHtml(g.title)}" ${g.is_active ? 'selected' : ''}>
+              ${escHtml(g.title)}
+            </option>
+          `).join('');
+          if (!data.goals.length) {
+            opts = `<option value="Machine Learning">Machine Learning</option><option value="Data Engineering">Data Engineering</option>`;
+          }
+          goalDropdown.innerHTML = opts;
+        }
         const recContainer = document.getElementById('inspector-rec-body');
         if (data.recommended_paper) {
           const rec = data.recommended_paper;
@@ -2162,37 +2207,43 @@
             : `<div class="inspector-empty">Empty</div>`;
         }
 
-        // 3. Stats & Gamification
-        const levelBadge = document.getElementById('user-level-badge');
-        if (levelBadge && data.gamification) {
-          levelBadge.textContent = data.gamification.level;
-        }
-
-        document.getElementById('stat-completed').textContent = data.stats.completed || 0;
-        document.getElementById('stat-reading').textContent   = data.stats.reading || 0;
-        document.getElementById('stat-to-read').textContent   = data.stats.to_read || 0;
-        document.getElementById('stat-notes').textContent     = data.stats.notes || 0;
-
-        // 4. Badges
-        const badgesRow = document.getElementById('badges-row');
-        if (badgesRow) {
-          if (!data.gamification.badges || data.gamification.badges.length === 0) {
-            badgesRow.innerHTML = `<span class="inspector-empty">Complete papers to unlock research badges!</span>`;
-          } else {
-            badgesRow.innerHTML = data.gamification.badges.map(b => `
-              <div class="badge-chip" title="${escHtml(b.desc)}">
-                <span>${b.icon}</span>
-                <span>${escHtml(b.title)}</span>
-              </div>
-            `).join('');
-          }
-        }
-
         // 5. Full-Screen Kanban Workspace render
         renderTopicKanbanWorkspace(data);
 
       } catch (err) {
         console.warn('Failed to load dashboard:', err);
+      }
+    }
+
+    async function handleGoalSelectChange(selectEl) {
+      const title = selectEl.value;
+      if (!title) return;
+      try {
+        await fetch('/api/goals/activate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ user_email: currentUserEmail, title: title })
+        });
+        loadDashboard();
+        promptTool(`Switch my learning goal to '${title}' and adapt my reading recommendations`);
+      } catch (err) {
+        console.warn('Failed to switch goal:', err);
+      }
+    }
+
+    async function promptNewGoal() {
+      const title = prompt('Enter your new learning goal (e.g. Data Engineering for Cloud Systems):');
+      if (!title || !title.trim()) return;
+      try {
+        await fetch('/api/goals/activate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ user_email: currentUserEmail, title: title.trim() })
+        });
+        loadDashboard();
+        promptTool(`Set my new learning goal to '${title.trim()}' and adapt my reading plan`);
+      } catch (err) {
+        console.warn('Failed to create goal:', err);
       }
     }
 

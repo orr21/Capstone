@@ -283,12 +283,81 @@ def get_conversation_messages(conversation_id: str):
         logger.warning("Failed to get messages: %s", e)
         return []
 
-@app.get("/api/dashboard")
-def get_user_dashboard(user_email: str):
-    """Retrieve active reading plan, recommendations, reading progress, and gamification badges for user."""
+class GoalActivateRequest(BaseModel):
+    user_email: str
+    title: str
+    description: Optional[str] = ""
+
+@app.get("/api/goals")
+def list_user_goals(user_email: str):
+    """List all learning goals for a user and highlight active goal."""
     try:
         conn = get_db_conn()
         cursor = conn.cursor()
+        cursor.execute(
+            "SELECT goal_id, title, description, is_active FROM learning_goals WHERE user_id = %s ORDER BY created_at DESC",
+            (user_email,)
+        )
+        rows = cursor.fetchall()
+        cursor.close()
+        conn.close()
+        return [
+            {"goal_id": r[0], "title": r[1], "description": r[2] or "", "is_active": bool(r[3])}
+            for r in rows
+        ]
+    except Exception as e:
+        logger.warning("Failed to list goals: %s", e)
+        return []
+
+@app.post("/api/goals/activate")
+def activate_or_create_goal(req: GoalActivateRequest):
+    """Manually activate or create a learning goal for a user, adapting recommendations and reading plans."""
+    try:
+        conn = get_db_conn()
+        cursor = conn.cursor()
+
+        # Deactivate previous active goals
+        cursor.execute("UPDATE learning_goals SET is_active = FALSE WHERE user_id = %s", (req.user_email,))
+        
+        # Check if goal already exists
+        cursor.execute(
+            "SELECT goal_id FROM learning_goals WHERE user_id = %s AND title ILIKE %s LIMIT 1",
+            (req.user_email, req.title)
+        )
+        existing = cursor.fetchone()
+        if existing:
+            goal_id = existing[0]
+            cursor.execute("UPDATE learning_goals SET is_active = TRUE WHERE goal_id = %s", (goal_id,))
+        else:
+            goal_id = f"goal_{uuid.uuid4().hex[:12]}"
+            cursor.execute(
+                "INSERT INTO learning_goals (goal_id, user_id, title, description, is_active) VALUES (%s, %s, %s, %s, TRUE)",
+                (goal_id, req.user_email, req.title, req.description)
+            )
+        
+        conn.commit()
+        cursor.close()
+        conn.close()
+        return {"status": "success", "goal_id": goal_id, "title": req.title}
+    except Exception as e:
+        logger.exception("Failed to activate goal")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/dashboard")
+def get_user_dashboard(user_email: str):
+    """Retrieve learning goals, active plan, recommendations, and reading progress for user."""
+    try:
+        conn = get_db_conn()
+        cursor = conn.cursor()
+
+        # 0. Fetch user learning goals
+        cursor.execute(
+            "SELECT goal_id, title, description, is_active FROM learning_goals WHERE user_id = %s ORDER BY is_active DESC, created_at DESC",
+            (user_email,)
+        )
+        goal_rows = cursor.fetchall()
+        goals = [{"goal_id": r[0], "title": r[1], "description": r[2] or "", "is_active": bool(r[3])} for r in goal_rows]
+        active_goal = goals[0] if goals else None
 
         # 1. Fetch active reading plan
         cursor.execute(
@@ -318,11 +387,7 @@ def get_user_dashboard(user_email: str):
         reading = [r for r in prog_rows if r[2] == 'READING']
         to_read = [r for r in prog_rows if r[2] == 'TO_READ']
 
-        # 3. Fetch count of user notes
-        cursor.execute("SELECT COUNT(*) FROM notes WHERE user_id = %s", (user_email,))
-        notes_count = cursor.fetchone()[0]
-
-        # 4. Next Recommended Paper
+        # 3. Next Recommended Paper
         recommended_paper = None
         if reading:
             recommended_paper = {"paper_id": reading[0][0], "title": reading[0][1], "status": "READING", "reason": "Currently in progress"}
@@ -337,51 +402,27 @@ def get_user_dashboard(user_email: str):
         cursor.close()
         conn.close()
 
-        # 5. Gamification Ranks & Badges calculation
-        num_completed = len(completed)
-        if num_completed >= 10:
-            level_name = "Level 4 — Research Master 🎓"
-        elif num_completed >= 5:
-            level_name = "Level 3 — Literature Scholar 📜"
-        elif num_completed >= 2:
-            level_name = "Level 2 — Paper Pathfinder 🧭"
-        else:
-            level_name = "Level 1 — Knowledge Explorer 🌱"
-
-        badges = []
-        if num_completed >= 1:
-            badges.append({"id": "first_paper", "title": "First Steps", "icon": "🏁", "desc": "Completed first paper"})
-        if num_completed >= 3:
-            badges.append({"id": "streak_3", "title": "Reading Streak", "icon": "🔥", "desc": "Completed 3 papers"})
-        if num_completed >= 5:
-            badges.append({"id": "scholar_5", "title": "Scholar", "icon": "🏆", "desc": "Completed 5 papers"})
-        if notes_count >= 1:
-            badges.append({"id": "note_taker", "title": "Note Taker", "icon": "✍️", "desc": "Saved study notes"})
-
         return {
             "user_email": user_email,
+            "goals": goals,
+            "active_goal": active_goal,
             "active_plan": active_plan,
             "recommended_paper": recommended_paper,
             "stats": {
-                "completed": num_completed,
+                "completed": len(completed),
                 "reading": len(reading),
-                "to_read": len(to_read),
-                "notes": notes_count
-            },
-            "gamification": {
-                "level": level_name,
-                "completed_count": num_completed,
-                "badges": badges
+                "to_read": len(to_read)
             }
         }
     except Exception as e:
         logger.warning("Failed to fetch dashboard: %s", e)
         return {
             "user_email": user_email,
+            "goals": [],
+            "active_goal": None,
             "active_plan": None,
             "recommended_paper": None,
-            "stats": {"completed": 0, "reading": 0, "to_read": 0, "notes": 0},
-            "gamification": {"level": "Level 1 — Knowledge Explorer 🌱", "completed_count": 0, "badges": []}
+            "stats": {"completed": 0, "reading": 0, "to_read": 0}
         }
 
 def _validate_tool_call_guardrails(tool_name: str, args: dict):

@@ -302,6 +302,11 @@ async def _sse_encoder(events):
         yield f"data: {json.dumps(event)}\n\n"
 
 
+@mlflow.trace(
+    name="research_copilot_agent",
+    span_type=SpanType.AGENT,
+    output_reducer=_aggregate_agent_events,
+)
 async def run_agent(user_email: str, messages_payload: list, openai_client: OpenAI, bearer_token: str = ""):
     """Orchestrate the chat agent: MCP tool discovery, LLM call, tool calls, synthesis.
 
@@ -310,30 +315,27 @@ async def run_agent(user_email: str, messages_payload: list, openai_client: Open
     CHAT_MODEL span. Yields SSE event dicts.
     """
     last_user_msg = messages_payload[-1]["content"] if messages_payload else ""
-    events_collected = []
-
-    def _track_event(ev):
-        events_collected.append(ev)
-        return ev
+    try:
+        mlflow.update_current_trace(
+            tags={"user": user_email, "app": "research-copilot-ui", "model": ENDPOINT_NAME},
+            request_preview=f"Q: {last_user_msg[:200]}",
+        )
+    except Exception:
+        pass  # tracing is optional; never block the stream
 
     try:
-        try:
-            agent_span_cm = mlflow.start_span(name="research_copilot_agent", span_type=SpanType.AGENT)
-            agent_span = agent_span_cm.__enter__()
-            agent_span.set_inputs({"user": user_email, "messages": last_user_msg})
-        except Exception as mlflow_err:
-            logger.warning("Could not start MLflow AGENT span: %s", mlflow_err)
-            agent_span_cm = None
-            agent_span = None
-
-        yield _track_event({"type": "status", "content": "Discovering MCP tools..."})
+        yield {"type": "status", "content": "Discovering MCP tools..."}
         openai_tools, tool_router = await mcp_registry.get_all_tools(bearer_token=bearer_token)
 
-        if agent_span is not None:
-            agent_span.set_attributes({
-                "mcp_tools_loaded": [t["function"]["name"] for t in openai_tools],
-                "mcp_tools_count": len(openai_tools),
-            })
+        span = mlflow.get_current_active_span()
+        if span is not None:
+            try:
+                span.set_attributes({
+                    "mcp_tools_loaded": [t["function"]["name"] for t in openai_tools],
+                    "mcp_tools_count": len(openai_tools),
+                })
+            except Exception:
+                pass
 
         if openai_tools:
             tool_names = [t["function"]["name"] for t in openai_tools]
@@ -381,11 +383,14 @@ async def run_agent(user_email: str, messages_payload: list, openai_client: Open
                 }
 
         emitted = list(tool_calls_data.values())
-        if agent_span is not None:
-            agent_span.set_attributes({
-                "llm_emitted_tool_calls": [t["name"] for t in emitted],
-                "llm_tool_calls_count": len(emitted),
-            })
+        if span is not None:
+            try:
+                span.set_attributes({
+                    "llm_emitted_tool_calls": [t["name"] for t in emitted],
+                    "llm_tool_calls_count": len(emitted),
+                })
+            except Exception:
+                pass
         if openai_tools and not emitted:
             logger.warning(
                 "Tools were provided to the model but it did not emit any tool calls; "
@@ -431,8 +436,6 @@ async def run_agent(user_email: str, messages_payload: list, openai_client: Open
                 name=f"tool_{original_tool_name}",
                 span_type=SpanType.TOOL,
             ) as tool_span:
-                # Register inputs BEFORE calling so MLflow captures them
-                # even if the tool raises an exception.
                 tool_span.set_inputs({
                     "tool_name": resolved,
                     "original_tool_name": original_tool_name,
@@ -475,18 +478,9 @@ async def run_agent(user_email: str, messages_payload: list, openai_client: Open
 
     except Exception as e:
         logger.exception("Stream execution error")
-        err_ev = {
+        yield {
             "type": "error",
             "content": "Something went wrong while answering.",
             "detail": str(e),
             "hint": "Retry, and check the app logs for the full traceback.",
         }
-        events_collected.append(err_ev)
-        yield err_ev
-    finally:
-        if agent_span is not None and agent_span_cm is not None:
-            try:
-                agent_span.set_outputs(_aggregate_agent_events(events_collected))
-                agent_span_cm.__exit__(None, None, None)
-            except Exception as exit_err:
-                logger.warning("Could not close MLflow agent span: %s", exit_err)

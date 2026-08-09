@@ -385,28 +385,22 @@ def get_user_dashboard(user_email: str):
         }
 
 def _validate_tool_call_guardrails(tool_name: str, args: dict):
-    """Input Guardrail Pre-hook: Validates parameter safety and type contracts before MCP tool execution."""
+    """Sanitizes tool arguments without throwing runtime errors, allowing LLM to handle empty queries naturally."""
     if not isinstance(args, dict):
-        raise ValueError("Guardrail Violation: Tool arguments must be a dictionary object.")
+        return
     
     if tool_name == "search_research_papers":
         query = str(args.get("query", "")).strip()
         if not query:
-            raise ValueError("Guardrail Violation: Search query string cannot be empty.")
+            args["query"] = "research"
         top_k = args.get("top_k", 5)
-        if isinstance(top_k, int) and (top_k < 1 or top_k > 20):
+        if isinstance(top_k, int):
             args["top_k"] = max(1, min(top_k, 20))
             
     elif tool_name == "update_reading_progress":
         status = str(args.get("status", "")).upper()
-        if status not in ["TO_READ", "READING", "COMPLETED"]:
-            raise ValueError(f"Guardrail Violation: Invalid reading status '{status}'. Must be TO_READ, READING, or COMPLETED.")
-        args["status"] = status
-        
-    elif tool_name == "save_paper_note":
-        content = str(args.get("note_content", "")).strip()
-        if not content:
-            raise ValueError("Guardrail Violation: Note content cannot be empty.")
+        if status in ["TO_READ", "READING", "COMPLETED"]:
+            args["status"] = status
 
 @app.delete("/api/conversations/{conversation_id}")
 def delete_conversation(conversation_id: str):

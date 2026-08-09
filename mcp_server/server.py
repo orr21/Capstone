@@ -178,7 +178,7 @@ init_db_tables()
 @mcp.tool
 def search_research_papers(query: str, top_k: int = 5) -> str:
     """
-    Semantically searches research papers in Lakebase using vector similarity.
+    Semantically searches research papers in Lakebase using vector similarity and hybrid keyword matching.
     Returns paper IDs, titles, publication years, citations, and abstracts.
     """
     try:
@@ -188,6 +188,17 @@ def search_research_papers(query: str, top_k: int = 5) -> str:
         conn = get_db_conn()
         cursor = conn.cursor()
         
+        # 1. Hybrid Check: Direct keyword match in papers table
+        kw_sql = """
+            SELECT paper_id, title, abstract_text, publication_year, citation_count
+            FROM papers
+            WHERE title ILIKE %s OR abstract_text ILIKE %s
+            LIMIT %s;
+        """
+        cursor.execute(kw_sql, (f"%{query}%", f"%{query}%", top_k))
+        kw_rows = cursor.fetchall()
+
+        # 2. Vector similarity search
         sql = """
             SELECT 
                 p.paper_id, p.title, p.abstract_text, p.publication_year, p.citation_count,
@@ -198,20 +209,39 @@ def search_research_papers(query: str, top_k: int = 5) -> str:
             LIMIT %s;
         """
         cursor.execute(sql, (q_vec, q_vec, top_k))
-        rows = cursor.fetchall()
+        vec_rows = cursor.fetchall()
         cursor.close()
         conn.close()
         
-        if not rows:
-            return "No relevant papers found in Lakebase."
-            
-        output = []
-        for r in rows:
+        # Combine keyword matches and relevant vector matches (similarity >= 0.35)
+        relevant_rows = []
+        seen_pids = set()
+
+        # Add direct keyword matches first
+        for r in kw_rows:
+            pid = r[0]
+            seen_pids.add(pid)
             snippet = r[2][:300] + "..." if r[2] else "No abstract available."
-            output.append(
-                f"• [{r[0]}] \"{r[1]}\" ({r[3]}) | Citations: {r[4]} | Match Score: {r[5]:.2f}\n  Abstract: {snippet}"
+            relevant_rows.append(
+                f"• [{pid}] \"{r[1]}\" ({r[3]}) | Citations: {r[4]} | Keyword Match\n  Abstract: {snippet}"
             )
-        return "\n\n".join(output)
+
+        # Add vector matches if score >= 0.35
+        for r in vec_rows:
+            pid = r[0]
+            sim = r[5]
+            if pid not in seen_pids and sim >= 0.35:
+                seen_pids.add(pid)
+                snippet = r[2][:300] + "..." if r[2] else "No abstract available."
+                relevant_rows.append(
+                    f"• [{pid}] \"{r[1]}\" ({r[3]}) | Citations: {r[4]} | Match Score: {sim:.2f}\n  Abstract: {snippet}"
+                )
+
+        if not relevant_rows:
+            top_score_msg = f" (Top similarity score was {vec_rows[0][5]:.2f})" if vec_rows else ""
+            return f"No relevant research papers matching '{query}' were found in Lakebase{top_score_msg}. Please try a different query or topic."
+
+        return "\n\n".join(relevant_rows[:top_k])
     except Exception as e:
         logger.exception("Search failed")
         return f"Error executing search: {str(e)}"

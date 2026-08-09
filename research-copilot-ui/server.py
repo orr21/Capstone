@@ -201,6 +201,7 @@ def read_root():
 TOOL_CATEGORIES = {
     "search_research_papers": ("Search & Retrieval", "🔍", "Perform semantic vector search across research papers in Lakebase."),
     "find_papers_for_goal": ("Search & Retrieval", "🎯", "Match papers to student learning goals and retrieve relevant context."),
+    "create_or_set_learning_goal": ("Planning & Progress", "🚀", "Create a new learning goal or switch your active study topic."),
     "summarize_and_compare_papers": ("Analysis & Comparison", "⚖️", "Fetch raw abstracts and user notes to compare 2+ papers."),
     "count_papers": ("Analysis & Comparison", "🔢", "Count research papers matching keywords or publication year."),
     "generate_sequenced_reading_plan": ("Planning & Progress", "🗺️", "Generate and save a sequenced reading plan for a learning goal."),

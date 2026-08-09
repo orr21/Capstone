@@ -217,27 +217,68 @@ def search_research_papers(query: str, top_k: int = 5) -> str:
         return f"Error executing search: {str(e)}"
 
 @mcp.tool
-def find_papers_for_goal(user_id: str, goal_title_or_id: str) -> str:
+def create_or_set_learning_goal(user_id: str, title: str, description: str = "") -> dict:
     """
-    Finds papers matching a student's learning goal by querying learning goals and searching relevant papers.
+    Creates a new learning goal for a user or activates an existing one. Allows users to switch study topics smoothly.
     """
     conn = get_db_conn()
     try:
         cursor = conn.cursor()
-        # Find matching goal description or title
+        cursor.execute(
+            "SELECT goal_id, title FROM learning_goals WHERE user_id = %s AND title ILIKE %s LIMIT 1",
+            (user_id, title)
+        )
+        existing = cursor.fetchone()
+        if existing:
+            goal_id = existing[0]
+            msg = f"Activated existing learning goal '{existing[1]}' (`{goal_id}`)."
+        else:
+            goal_id = f"goal_{uuid.uuid4().hex[:12]}"
+            cursor.execute(
+                "INSERT INTO learning_goals (goal_id, user_id, title, description) VALUES (%s, %s, %s, %s)",
+                (goal_id, user_id, title, description)
+            )
+            conn.commit()
+            msg = f"Created new learning goal '{title}' (`{goal_id}`)."
+        
+        cursor.close()
+        conn.close()
+        return {"status": "success", "goal_id": goal_id, "title": title, "message": msg}
+    except Exception as e:
+        logger.exception("create_or_set_learning_goal failed")
+        return {"status": "error", "message": str(e)}
+
+@mcp.tool
+def find_papers_for_goal(user_id: str, goal_title_or_id: str) -> str:
+    """
+    Finds research papers matching a student's learning goal. Automatically creates the goal if it does not exist.
+    """
+    conn = get_db_conn()
+    try:
+        cursor = conn.cursor()
+        # Search for existing goal
         cursor.execute(
             "SELECT goal_id, title, description FROM learning_goals WHERE user_id = %s AND (goal_id = %s OR title ILIKE %s) LIMIT 1",
             (user_id, goal_title_or_id, f"%{goal_title_or_id}%")
         )
         goal_row = cursor.fetchone()
-        cursor.close()
-        conn.close()
-
-        search_query = goal_title_or_id
-        goal_info = f"Goal: '{goal_title_or_id}'"
-        if goal_row:
+        
+        if not goal_row:
+            # Auto-create goal so user is never blocked
+            goal_id = f"goal_{uuid.uuid4().hex[:12]}"
+            cursor.execute(
+                "INSERT INTO learning_goals (goal_id, user_id, title, description) VALUES (%s, %s, %s, %s)",
+                (goal_id, user_id, goal_title_or_id, f"Auto-created goal for {goal_title_or_id}")
+            )
+            conn.commit()
+            goal_info = f"New Goal Created [{goal_id}]: '{goal_title_or_id}'"
+            search_query = goal_title_or_id
+        else:
             goal_info = f"Goal [{goal_row[0]}]: '{goal_row[1]}' ({goal_row[2] or 'No description'})"
             search_query = f"{goal_row[1]} {goal_row[2] or ''}"
+
+        cursor.close()
+        conn.close()
 
         search_results = search_research_papers(query=search_query, top_k=5)
         return f"### Learning Goal Context\n{goal_info}\n\n### Matching Recommended Papers\n{search_results}"

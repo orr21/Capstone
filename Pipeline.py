@@ -1,9 +1,3 @@
-# Databricks notebook source
-# MAGIC %pip install -q sentence-transformers
-# MAGIC dbutils.library.restartPython()
-
-# COMMAND ----------
-
 import os
 import time
 import requests
@@ -19,7 +13,7 @@ from sentence_transformers import SentenceTransformer
 DB_HOST  = os.environ.get("DB_HOST", "ep-withered-breeze-d8845p1k.database.us-east-2.cloud.databricks.com")
 DB_NAME  = os.environ.get("DB_NAME", "databricks_postgres")
 DB_USER  = os.environ.get("DB_USER", "research-copilot-agent")
-DB_PASS  = os.environ.get("DB_PASS", "")
+DB_PASS  = os.environ.get("DB_PASS", "npg_oG8qxChTtIz3")
 
 MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
 
@@ -30,6 +24,9 @@ TOPICS = []
 
 # Filter only freely accessible (Open Access) papers online
 ONLY_OPEN_ACCESS = True
+
+# Filter strictly for English language publications
+ONLY_ENGLISH = True
 
 # Dynamic rolling date window: (today - LOOKBACK_DAYS) to today
 LOOKBACK_DAYS = int(os.environ.get("INGEST_LOOKBACK_DAYS", "3"))
@@ -91,7 +88,7 @@ def reconstruct_abstract(inverted_index: dict) -> str:
     return " ".join(word for _, word in word_pos)
 
 
-def build_filter_clause(topic, start_date: str, end_date: str, only_oa: bool = True) -> str:
+def build_filter_clause(topic, start_date: str, end_date: str, only_oa: bool = True, only_english: bool = True) -> str:
     """Build OpenAlex filter query string."""
     filters = [
         f"from_publication_date:{start_date}",
@@ -99,6 +96,8 @@ def build_filter_clause(topic, start_date: str, end_date: str, only_oa: bool = T
     ]
     if only_oa:
         filters.append("is_oa:true")
+    if only_english:
+        filters.append("language:en")
     if topic:
         filters.append(f"default.search:{topic}")
 
@@ -107,7 +106,7 @@ def build_filter_clause(topic, start_date: str, end_date: str, only_oa: bool = T
 
 def fetch_openalex_page(filter_clause: str, cursor: str = "*", per_page: int = 200) -> dict:
     """OpenAlex Bulk REST API Fetching Optimization."""
-    select_fields = "id,doi,title,abstract_inverted_index,publication_year,cited_by_count,open_access"
+    select_fields = "id,doi,title,abstract_inverted_index,publication_year,cited_by_count,open_access,language,authorships"
     
     url = (
         f"https://api.openalex.org/works"
@@ -139,8 +138,8 @@ def fetch_openalex_page(filter_clause: str, cursor: str = "*", per_page: int = 2
     return {}
 
 
-def parse_papers(raw_papers: list, topic_label) -> list:
-    """Flatten raw OpenAlex JSON into tuples for PostgreSQL ingestion."""
+def parse_papers(raw_papers: list, topic_label=None) -> list:
+    """Flatten raw OpenAlex JSON into tuples for PostgreSQL `papers` table ingestion."""
     records = []
     for p in raw_papers:
         records.append((
@@ -151,9 +150,34 @@ def parse_papers(raw_papers: list, topic_label) -> list:
             p.get("publication_year"),
             p.get("cited_by_count", 0),
             (p.get("open_access") or {}).get("oa_url"),
-            topic_label or "general",
         ))
     return records
+
+
+def parse_authors(raw_papers: list) -> tuple:
+    """Extract author tuples and paper-author junction tuples from raw OpenAlex records."""
+    authors_dict = {}  # author_id -> (author_id, display_name, orcid, institution_name)
+    paper_authors_list = []  # (paper_id, author_id, author_position)
+
+    for p in raw_papers:
+        paper_id = str(p.get("id"))
+        authorships = p.get("authorships") or []
+        for idx, a_item in enumerate(authorships):
+            author_info = a_item.get("author") or {}
+            raw_aid = author_info.get("id")
+            if not raw_aid:
+                continue
+            author_id = str(raw_aid)
+            display_name = (author_info.get("display_name") or "").strip()
+            orcid = (author_info.get("orcid") or "").strip()
+            
+            institutions = a_item.get("institutions") or []
+            institution_name = (institutions[0].get("display_name") or "").strip() if institutions else ""
+
+            authors_dict[author_id] = (author_id, display_name, orcid, institution_name)
+            paper_authors_list.append((paper_id, author_id, idx + 1))
+
+    return list(authors_dict.values()), paper_authors_list
 
 
 def ingest_papers(parsed_records: list):
@@ -164,7 +188,7 @@ def ingest_papers(parsed_records: list):
     insert_sql = """
         INSERT INTO papers (
             paper_id, doi, title, abstract_text,
-            publication_year, citation_count, open_access_url, topic
+            publication_year, citation_count, open_access_url
         ) VALUES %s
         ON CONFLICT (paper_id) DO UPDATE SET
             doi              = EXCLUDED.doi,
@@ -172,8 +196,7 @@ def ingest_papers(parsed_records: list):
             abstract_text    = EXCLUDED.abstract_text,
             publication_year = EXCLUDED.publication_year,
             citation_count   = EXCLUDED.citation_count,
-            open_access_url  = EXCLUDED.open_access_url,
-            topic            = EXCLUDED.topic;
+            open_access_url  = EXCLUDED.open_access_url;
     """
 
     conn = get_db_connection()
@@ -181,6 +204,40 @@ def ingest_papers(parsed_records: list):
         with conn.cursor() as cur:
             execute_values(cur, insert_sql, parsed_records, page_size=100)
         conn.commit()
+    finally:
+        conn.close()
+
+
+def ingest_authors(authors_records: list, paper_authors_records: list):
+    """Upsert authors and paper-author junction records into Lakebase."""
+    if not authors_records:
+        return
+
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cur:
+            insert_authors_sql = """
+                INSERT INTO authors (author_id, display_name, orcid, institution_name)
+                VALUES %s
+                ON CONFLICT (author_id) DO UPDATE SET
+                    display_name     = EXCLUDED.display_name,
+                    orcid            = EXCLUDED.orcid,
+                    institution_name = EXCLUDED.institution_name;
+            """
+            execute_values(cur, insert_authors_sql, authors_records, page_size=100)
+
+            if paper_authors_records:
+                insert_pa_sql = """
+                    INSERT INTO paper_authors (paper_id, author_id, author_position)
+                    VALUES %s
+                    ON CONFLICT (paper_id, author_id) DO UPDATE SET
+                        author_position = EXCLUDED.author_position;
+                """
+                execute_values(cur, insert_pa_sql, paper_authors_records, page_size=100)
+
+        conn.commit()
+    except Exception as e:
+        print(f"  Warning writing authors/paper_authors: {e}")
     finally:
         conn.close()
 
@@ -231,13 +288,21 @@ def embed_and_store(parsed_records: list, model: SentenceTransformer):
 
 
 def process_batch(raw_batch: list, topic_label, embed_model: SentenceTransformer) -> int:
-    """Parse, ingest into PostgreSQL, compute embeddings, and commit a batch of papers immediately."""
-    parsed = parse_papers(raw_batch, topic_label)
-    if not parsed:
+    """Parse papers and authors, ingest into PostgreSQL, compute embeddings, and commit immediately."""
+    parsed_papers = parse_papers(raw_batch, topic_label)
+    if not parsed_papers:
         return 0
-    ingest_papers(parsed)
-    embed_and_store(parsed, embed_model)
-    return len(parsed)
+    
+    # 1. Ingest paper metadata
+    ingest_papers(parsed_papers)
+
+    # 2. Parse and ingest authors + paper_authors junction table
+    authors_records, paper_authors_records = parse_authors(raw_batch)
+    ingest_authors(authors_records, paper_authors_records)
+
+    # 3. Compute vector embeddings
+    embed_and_store(parsed_papers, embed_model)
+    return len(parsed_papers)
 
 
 # ---------------------------------------------------------------------------
@@ -268,7 +333,7 @@ def run_incremental_pipeline():
         label = f'"{topic}"' if topic else "all topics"
         print(f"\nStreaming ingestion for {label}...")
 
-        filter_clause = build_filter_clause(topic, START_DATE, END_DATE, only_oa=ONLY_OPEN_ACCESS)
+        filter_clause = build_filter_clause(topic, START_DATE, END_DATE, only_oa=ONLY_OPEN_ACCESS, only_english=ONLY_ENGLISH)
         cursor = "*"
         page_count = 0
         current_batch = []

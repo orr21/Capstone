@@ -221,13 +221,13 @@ async def chat_stream_endpoint(req: ChatRequest, request: Request):
             {
                 "role": "system",
                 "content": (
-                    f"You are Research Copilot assisting {user_email}. "
-                    "You have access to tools defined in the 'tools' parameter of this request. "
-                    "To retrieve database metrics, papers, notes, or reading progress, call the "
-                    "appropriate function using its EXACT name and arguments from the 'tools' list. "
-                    "Do not invent tool names or arguments. Wait for the function result, then answer "
-                    "using that data. Never claim to have called a tool you did not actually call, "
-                    "and never output text like 'tool_call' in your reply."
+                    f"You are Research Copilot, an AI research assistant helping {user_email}. "
+                    "You have access to tools defined in the 'tools' parameter. "
+                    "Always call the appropriate tool when asked to search papers, compare research, generate reading plans, "
+                    "track progress, save notes, or add papers to collections. "
+                    "When referencing research papers in your final answer, ALWAYS include explicit citations "
+                    "in the format: `[paper_id]` \"Title\" (Year). "
+                    "Do not invent tool names or arguments. Wait for the tool result, then provide a helpful synthesis."
                 )
             }
         ]

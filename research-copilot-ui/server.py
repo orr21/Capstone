@@ -184,12 +184,136 @@ class MultiMCPRegistry:
 
 mcp_registry = MultiMCPRegistry(MCP_SERVERS)
 
+def get_db_conn():
+    return pg8000.dbapi.connect(
+        host=DB_HOST, port=5432, database=DB_NAME,
+        user=DB_USER, password=DB_PASS, ssl_context=True
+    )
+
 class ChatMessage(BaseModel):
     role: str
     content: str
 
 class ChatRequest(BaseModel):
     messages: List[ChatMessage]
+    conversation_id: Optional[str] = None
+    user_email: Optional[str] = None
+
+class ConversationCreate(BaseModel):
+    user_email: str
+    title: Optional[str] = "New Research Chat"
+
+@app.get("/api/conversations")
+def list_conversations(user_email: str):
+    """List all chat conversations for a given user email."""
+    try:
+        conn = get_db_conn()
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT conversation_id, title, created_at, updated_at FROM conversations WHERE user_id = %s ORDER BY updated_at DESC",
+            (user_email,)
+        )
+        rows = cursor.fetchall()
+        cursor.close()
+        conn.close()
+        return [
+            {
+                "conversation_id": r[0],
+                "title": r[1] or "Research Session",
+                "created_at": r[2].isoformat() if r[2] else "",
+                "updated_at": r[3].isoformat() if r[3] else ""
+            } for r in rows
+        ]
+    except Exception as e:
+        logger.warning("Failed to list conversations: %s", e)
+        return []
+
+@app.post("/api/conversations")
+def create_conversation(req: ConversationCreate):
+    """Create a new conversation session for a user."""
+    conv_id = f"conv_{uuid.uuid4().hex[:12]}"
+    try:
+        conn = get_db_conn()
+        cursor = conn.cursor()
+        # Ensure user exists
+        cursor.execute(
+            "INSERT INTO users (user_id, email, name) VALUES (%s, %s, %s) ON CONFLICT (user_id) DO NOTHING",
+            (req.user_email, req.user_email, req.user_email.split('@')[0])
+        )
+        cursor.execute(
+            "INSERT INTO conversations (conversation_id, user_id, title) VALUES (%s, %s, %s)",
+            (conv_id, req.user_email, req.title)
+        )
+        conn.commit()
+        cursor.close()
+        conn.close()
+        return {"conversation_id": conv_id, "title": req.title, "user_email": req.user_email}
+    except Exception as e:
+        logger.exception("Failed to create conversation")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/conversations/{conversation_id}/messages")
+def get_conversation_messages(conversation_id: str):
+    """Get all saved messages for a conversation session."""
+    try:
+        conn = get_db_conn()
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT message_id, role, content, citations, created_at FROM messages WHERE conversation_id = %s ORDER BY created_at ASC",
+            (conversation_id,)
+        )
+        rows = cursor.fetchall()
+        cursor.close()
+        conn.close()
+        return [
+            {
+                "message_id": r[0],
+                "role": r[1],
+                "content": r[2],
+                "citations": r[3] or [],
+                "created_at": r[4].isoformat() if r[4] else ""
+            } for r in rows
+        ]
+    except Exception as e:
+        logger.warning("Failed to get messages: %s", e)
+        return []
+
+@app.delete("/api/conversations/{conversation_id}")
+def delete_conversation(conversation_id: str):
+    """Delete a conversation session."""
+    try:
+        conn = get_db_conn()
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM conversations WHERE conversation_id = %s", (conversation_id,))
+        conn.commit()
+        cursor.close()
+        conn.close()
+        return {"status": "success", "message": f"Deleted conversation {conversation_id}"}
+    except Exception as e:
+        logger.exception("Failed to delete conversation")
+        raise HTTPException(status_code=500, detail=str(e))
+
+def save_chat_message(conversation_id: str, role: str, content: str):
+    """Helper to record a chat message into Lakebase PostgreSQL."""
+    if not conversation_id or not content:
+        return
+    msg_id = f"msg_{uuid.uuid4().hex[:12]}"
+    try:
+        conn = get_db_conn()
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT INTO messages (message_id, conversation_id, role, content) VALUES (%s, %s, %s, %s)",
+            (msg_id, conversation_id, role, content)
+        )
+        cursor.execute(
+            "UPDATE conversations SET updated_at = CURRENT_TIMESTAMP WHERE conversation_id = %s",
+            (conversation_id,)
+        )
+        conn.commit()
+        cursor.close()
+        conn.close()
+    except Exception as e:
+        logger.warning("Could not save message to database: %s", e)
 
 @app.get("/")
 def read_root():
@@ -248,7 +372,8 @@ async def read_tools(request: Request):
 @app.post("/api/chat/stream")
 async def chat_stream_endpoint(req: ChatRequest, request: Request):
     try:
-        user_email = request.headers.get("x-forwarded-user", "demo_user@workspace.com")
+        user_email = req.user_email or request.headers.get("x-forwarded-user", "demo_user@workspace.com")
+        conversation_id = req.conversation_id
 
         # X-Forwarded-Access-Token is injected by Databricks Apps on every
         # authenticated request — it's the user's own OAuth token and is the
@@ -259,6 +384,10 @@ async def chat_stream_endpoint(req: ChatRequest, request: Request):
             logger.warning("No bearer token resolved; MCP calls will likely fail with 401")
 
         openai_client = get_openai_client()
+
+        last_user_text = req.messages[-1].content if req.messages else ""
+        if conversation_id and last_user_text:
+            save_chat_message(conversation_id, "user", last_user_text)
 
         messages_payload = [
             {
@@ -279,7 +408,7 @@ async def chat_stream_endpoint(req: ChatRequest, request: Request):
 
         agent = run_agent(user_email, messages_payload, openai_client, bearer_token)
         return StreamingResponse(
-            _sse_encoder_with_run(agent, user_email, messages_payload[-1]["content"] if messages_payload else ""),
+            _sse_encoder_with_run(agent, user_email, last_user_text, conversation_id),
             media_type="text/event-stream",
         )
     except Exception as e:
@@ -329,14 +458,15 @@ def _aggregate_agent_events(events):
     }
 
 
-async def _sse_encoder_with_run(events, user_email: str = "", last_user_msg: str = ""):
+async def _sse_encoder_with_run(events, user_email: str = "", last_user_msg: str = "", conversation_id: Optional[str] = None):
     """Wrap the agent generator in an explicit MLflow run so traces are committed.
 
     Using mlflow.start_run() ensures each request creates a real run entry in
     the experiment, even though run_agent is an async generator (which @mlflow.trace
-    cannot reliably commit for generators).
+    cannot reliably commit for generators). Also records output to Lakebase.
     """
     collected: list = []
+    final_text_parts: list = []
     try:
         with mlflow.start_run(run_name=f"copilot_{user_email[:20]}") as _run:
             try:
@@ -357,15 +487,29 @@ async def _sse_encoder_with_run(events, user_email: str = "", last_user_msg: str
                     pass
                 async for event in events:
                     collected.append(event)
+                    if event.get("type") == "chunk":
+                        final_text_parts.append(event.get("content", ""))
                     yield f"data: {json.dumps(event)}\n\n"
                 try:
                     agent_span.set_outputs(_aggregate_agent_events(collected))
                 except Exception:
                     pass
+
+        # Save assistant message to Lakebase PostgreSQL
+        full_response = "".join(final_text_parts)
+        if conversation_id and full_response:
+            save_chat_message(conversation_id, "assistant", full_response)
+
     except Exception:
         # If MLflow setup fails, still stream events without tracing
         async for event in events:
+            if event.get("type") == "chunk":
+                final_text_parts.append(event.get("content", ""))
             yield f"data: {json.dumps(event)}\n\n"
+        
+        full_response = "".join(final_text_parts)
+        if conversation_id and full_response:
+            save_chat_message(conversation_id, "assistant", full_response)
 
 
 

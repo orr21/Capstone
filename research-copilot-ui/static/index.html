@@ -427,6 +427,346 @@
       50%       { opacity: 0.45; }
     }
 
+    /* ── Main layout & Sidebar ──────────────────────────────────────────────── */
+    .app-viewport {
+      display: flex;
+      flex: 1;
+      overflow: hidden;
+      position: relative;
+      z-index: 1;
+    }
+
+    .sidebar {
+      width: 260px;
+      background: var(--canvas-soft);
+      border-right: 1px solid var(--hairline-strong);
+      display: flex;
+      flex-direction: column;
+      flex-shrink: 0;
+      transition: transform 0.25s ease;
+    }
+
+    .sidebar-header {
+      padding: var(--sp-base);
+      border-bottom: 1px solid var(--hairline);
+    }
+
+    .new-chat-btn {
+      width: 100%;
+      background: var(--ink);
+      color: var(--on-primary);
+      border: none;
+      border-radius: var(--r-pill);
+      padding: 10px var(--sp-base);
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      transition: opacity 0.15s ease, transform 0.15s ease;
+    }
+
+    .new-chat-btn:hover {
+      opacity: 0.9;
+      transform: translateY(-1px);
+    }
+
+    .sidebar-chats-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: var(--sp-xs);
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .chat-session-item {
+      padding: var(--sp-xs) var(--sp-sm);
+      border-radius: var(--r-md);
+      font-size: 13px;
+      color: var(--ink-secondary);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--sp-xs);
+      transition: background 0.15s ease;
+      border: 1px solid transparent;
+    }
+
+    .chat-session-item:hover {
+      background: var(--surface-strong);
+    }
+
+    .chat-session-item.active {
+      background: var(--surface-card);
+      border-color: var(--hairline);
+      font-weight: 500;
+      color: var(--ink);
+      box-shadow: 0 1px 4px rgba(0,0,0,0.03);
+    }
+
+    .session-title {
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .session-del-btn {
+      opacity: 0;
+      background: none;
+      border: none;
+      color: var(--muted);
+      cursor: pointer;
+      font-size: 14px;
+      padding: 2px 4px;
+      border-radius: var(--r-xs);
+    }
+
+    .chat-session-item:hover .session-del-btn {
+      opacity: 1;
+    }
+
+    .session-del-btn:hover {
+      color: var(--semantic-error);
+      background: var(--surface-strong);
+    }
+
+    .sidebar-footer {
+      padding: var(--sp-sm);
+      border-top: 1px solid var(--hairline);
+      background: var(--surface-card);
+    }
+
+    .user-profile-btn {
+      width: 100%;
+      background: var(--canvas-soft);
+      border: 1px solid var(--hairline);
+      border-radius: var(--r-lg);
+      padding: 8px var(--sp-sm);
+      display: flex;
+      align-items: center;
+      gap: var(--sp-xs);
+      cursor: pointer;
+      text-align: left;
+      transition: all 0.15s ease;
+    }
+
+    .user-profile-btn:hover {
+      border-color: var(--ink);
+      background: var(--surface-card);
+    }
+
+    .user-avatar {
+      width: 32px; height: 32px;
+      border-radius: 50%;
+      background: var(--ink);
+      color: var(--on-primary);
+      font-size: 11px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+
+    .user-info {
+      flex: 1;
+      overflow: hidden;
+    }
+
+    .user-name {
+      display: block;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--ink);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .user-email-sub {
+      display: block;
+      font-size: 11px;
+      color: var(--muted);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .user-switch-badge {
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+      color: var(--muted);
+      background: var(--surface-strong);
+      padding: 2px 6px;
+      border-radius: var(--r-xs);
+    }
+
+    /* ── User Selector Modal ──────────────────────────────────────────────── */
+    .user-modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(12, 10, 9, 0.35);
+      backdrop-filter: blur(4px);
+      z-index: 950;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.25s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .user-modal-backdrop.active {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .user-modal {
+      width: 100%;
+      max-width: 480px;
+      background: var(--canvas-soft);
+      border: 1px solid var(--hairline-strong);
+      border-radius: var(--r-xl);
+      box-shadow: 0 16px 48px rgba(0,0,0,0.12);
+      overflow: hidden;
+      transform: scale(0.96);
+      transition: transform 0.2s ease;
+    }
+
+    .user-modal-backdrop.active .user-modal {
+      transform: scale(1);
+    }
+
+    .user-modal-header {
+      padding: var(--sp-lg);
+      border-bottom: 1px solid var(--hairline);
+      background: var(--surface-card);
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+    }
+
+    .user-modal-header h2 {
+      font-family: var(--font-display);
+      font-size: 22px;
+      font-weight: 300;
+      color: var(--ink);
+    }
+
+    .user-modal-header p {
+      font-size: 13px;
+      color: var(--muted);
+      margin-top: 2px;
+    }
+
+    .user-modal-body {
+      padding: var(--sp-lg);
+      display: flex;
+      flex-direction: column;
+      gap: var(--sp-md);
+    }
+
+    .demo-profiles-title {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: var(--muted);
+    }
+
+    .demo-profiles-grid {
+      display: flex;
+      flex-direction: column;
+      gap: var(--sp-xs);
+    }
+
+    .demo-profile-card {
+      background: var(--surface-card);
+      border: 1px solid var(--hairline);
+      border-radius: var(--r-lg);
+      padding: var(--sp-sm) var(--sp-base);
+      display: flex;
+      align-items: center;
+      gap: var(--sp-sm);
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+
+    .demo-profile-card:hover {
+      border-color: var(--ink);
+      box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+      transform: translateY(-1px);
+    }
+
+    .profile-avatar {
+      width: 36px; height: 36px;
+      border-radius: 50%;
+      background: var(--ink);
+      color: var(--on-primary);
+      font-size: 12px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+
+    .profile-name {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--ink);
+    }
+
+    .profile-desc {
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .custom-login-divider {
+      text-align: center;
+      font-size: 12px;
+      color: var(--muted-soft);
+      position: relative;
+      margin: var(--sp-xs) 0;
+    }
+
+    .custom-login-form {
+      display: flex;
+      gap: var(--sp-xs);
+    }
+
+    .custom-email-input {
+      flex: 1;
+      border: 1px solid var(--hairline-strong);
+      border-radius: var(--r-md);
+      padding: 8px 12px;
+      font-size: 13px;
+      font-family: var(--font-body);
+      outline: none;
+    }
+
+    .custom-email-input:focus {
+      border-color: var(--ink);
+    }
+
+    .custom-login-btn {
+      background: var(--ink);
+      color: var(--on-primary);
+      border: none;
+      border-radius: var(--r-md);
+      padding: 8px 16px;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+    }
+
     /* ── Main layout ───────────────────────────────────────────────────────── */
     main {
       position: relative;
@@ -865,8 +1205,35 @@
     </div>
   </div>
 
-  <!-- Main content -->
-  <main role="main" aria-label="Research Copilot chat">
+  <!-- App Viewport with Sidebar -->
+  <div class="app-viewport">
+
+    <!-- Left Sidebar for Multiple Chat Sessions -->
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-header">
+        <button class="new-chat-btn" onclick="startNewChat()">
+          <span>+ New Research Chat</span>
+        </button>
+      </div>
+
+      <div class="sidebar-chats-list" id="chats-list">
+        <!-- Dynamically populated chat sessions -->
+      </div>
+
+      <div class="sidebar-footer">
+        <button class="user-profile-btn" onclick="toggleUserModal(true)">
+          <div class="user-avatar" id="user-avatar-initials">MG</div>
+          <div class="user-info">
+            <span class="user-name" id="user-display-name">Maria Garcia</span>
+            <span class="user-email-sub" id="user-email-sub">maria.garcia@mit.edu</span>
+          </div>
+          <span class="user-switch-badge">Switch</span>
+        </button>
+      </div>
+    </aside>
+
+    <!-- Main Chat Window -->
+    <main role="main" aria-label="Research Copilot chat">
 
     <!-- Messages -->
     <div class="chat-messages" id="chat-messages" role="log" aria-live="polite" aria-label="Conversation">
@@ -922,25 +1289,78 @@
       <p class="composer-hint">Powered by Databricks Lakebase · MLflow tracing enabled</p>
     </div>
 
-  </main>
+  </div> <!-- End .app-viewport -->
+
+  <!-- User Login / Demo Selector Modal -->
+  <div class="user-modal-backdrop" id="user-modal-backdrop" onclick="toggleUserModal(false)">
+    <div class="user-modal" onclick="event.stopPropagation()">
+      <div class="user-modal-header">
+        <div>
+          <h2>Select Profile / Login</h2>
+          <p>Choose a research profile to view your saved chats, goals, and progress</p>
+        </div>
+        <button class="modal-close-btn" onclick="toggleUserModal(false)">×</button>
+      </div>
+
+      <div class="user-modal-body">
+        <div class="demo-profiles-title">Demo User Profiles</div>
+        <div class="demo-profiles-grid">
+          <div class="demo-profile-card" onclick="selectProfile('maria.garcia@mit.edu', 'Maria Garcia')">
+            <div class="profile-avatar">MG</div>
+            <div>
+              <div class="profile-name">Maria Garcia</div>
+              <div class="profile-desc">MIT AI Student · Transformer Focus</div>
+            </div>
+          </div>
+
+          <div class="demo-profile-card" onclick="selectProfile('alex.chen@stanford.edu', 'Alex Chen')">
+            <div class="profile-avatar">AC</div>
+            <div>
+              <div class="profile-name">Alex Chen</div>
+              <div class="profile-desc">Stanford Postdoc · LLM Benchmarks</div>
+            </div>
+          </div>
+
+          <div class="demo-profile-card" onclick="selectProfile('demo_user@workspace.com', 'Demo User')">
+            <div class="profile-avatar">DU</div>
+            <div>
+              <div class="profile-name">Demo User</div>
+              <div class="profile-desc">Databricks Apps Default Profile</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="custom-login-divider">Or log in with custom email</div>
+        <div class="custom-login-form">
+          <input type="email" id="custom-email-input" class="custom-email-input" placeholder="researcher@university.edu" />
+          <button class="custom-login-btn" onclick="submitCustomProfile()">Log In</button>
+        </div>
+      </div>
+    </div>
+  </div>
 
   <script>
     /* ── Marked config ──────────────────────────────────────────────────── */
     marked.setOptions({ breaks: true, gfm: true });
 
     /* ── State ──────────────────────────────────────────────────────────── */
-    let messageHistory = [];
-    let isStreaming    = false;
+    let messageHistory      = [];
+    let isStreaming         = false;
+    let activeConversationId= null;
+    let currentUserEmail    = localStorage.getItem('active_user_email') || 'maria.garcia@mit.edu';
+    let currentUserName     = localStorage.getItem('active_user_name')  || 'Maria Garcia';
 
     /* ── Boot ───────────────────────────────────────────────────────────── */
     window.addEventListener('DOMContentLoaded', async () => {
+      // Update User Profile UI
+      updateUserProfileUI();
+
       // Load model name
       try {
         const res = await fetch('/api/config');
         const cfg = await res.json();
         const badge = document.getElementById('model-badge');
         if (badge && cfg.model) {
-          // Extract short display name
           const short = cfg.model.split('-').slice(-3).join('-');
           badge.textContent = short || cfg.model;
         }
@@ -949,10 +1369,172 @@
       // Fetch tools list
       loadTools();
 
+      // Fetch user conversations
+      loadConversations();
+
       // Auto-resize textarea on every input
       const input = document.getElementById('chat-input');
       input.addEventListener('input', () => autoResize(input));
     });
+
+    /* ── User Profile & Login Functions ──────────────────────────────────── */
+    function updateUserProfileUI() {
+      const initials = currentUserName.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2) || 'US';
+      document.getElementById('user-avatar-initials').textContent = initials;
+      document.getElementById('user-display-name').textContent    = currentUserName;
+      document.getElementById('user-email-sub').textContent        = currentUserEmail;
+    }
+
+    function toggleUserModal(show) {
+      const backdrop = document.getElementById('user-modal-backdrop');
+      if (!backdrop) return;
+      if (show) backdrop.classList.add('active');
+      else backdrop.classList.remove('active');
+    }
+
+    function selectProfile(email, name) {
+      currentUserEmail = email;
+      currentUserName  = name;
+      localStorage.setItem('active_user_email', email);
+      localStorage.setItem('active_user_name', name);
+      updateUserProfileUI();
+      toggleUserModal(false);
+      
+      // Reload conversations for new profile
+      activeConversationId = null;
+      loadConversations();
+      resetChatArea();
+    }
+
+    function submitCustomProfile() {
+      const input = document.getElementById('custom-email-input');
+      const email = (input ? input.value : '').trim();
+      if (!email) return;
+      const name = email.split('@')[0].replace('.', ' ');
+      selectProfile(email, name);
+    }
+
+    /* ── Multiple Chat Conversations Management ──────────────────────────── */
+    async function loadConversations() {
+      const listEl = document.getElementById('chats-list');
+      if (!listEl) return;
+      try {
+        const res = await fetch(`/api/conversations?user_email=${encodeURIComponent(currentUserEmail)}`);
+        const convs = await res.json();
+        
+        let html = '';
+        if (!convs || convs.length === 0) {
+          html = `<div style="padding: 12px; font-size: 12px; color: var(--muted); text-align: center;">No saved chats yet</div>`;
+        } else {
+          for (const c of convs) {
+            const isActive = c.conversation_id === activeConversationId ? 'active' : '';
+            html += `
+              <div class="chat-session-item ${isActive}" onclick="switchConversation('${c.conversation_id}')">
+                <span class="session-title">${escHtml(c.title)}</span>
+                <button class="session-del-btn" onclick="event.stopPropagation(); deleteConversation('${c.conversation_id}')" title="Delete chat">✕</button>
+              </div>`;
+          }
+        }
+        listEl.innerHTML = html;
+      } catch (err) {
+        console.warn('Failed to load conversations:', err);
+      }
+    }
+
+    async function startNewChat() {
+      try {
+        const res = await fetch('/api/conversations', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ user_email: currentUserEmail, title: 'New Research Chat' })
+        });
+        const data = await res.json();
+        activeConversationId = data.conversation_id;
+        resetChatArea();
+        loadConversations();
+      } catch (err) {
+        console.warn('Failed to start new chat:', err);
+      }
+    }
+
+    async function switchConversation(id) {
+      if (activeConversationId === id) return;
+      activeConversationId = id;
+      loadConversations();
+      
+      const container = document.getElementById('chat-messages');
+      container.innerHTML = `<div class="status-line"><span class="status-pulse"></span> Loading chat history…</div>`;
+
+      try {
+        const res = await fetch(`/api/conversations/${id}/messages`);
+        const msgs = await res.json();
+        
+        container.innerHTML = '';
+        messageHistory = [];
+
+        if (!msgs || msgs.length === 0) {
+          renderWelcomeState();
+        } else {
+          for (const m of msgs) {
+            messageHistory.push({ role: m.role, content: m.content });
+            const { row, bubble } = makeMsgRow(m.role === 'user' ? 'user' : 'ai');
+            if (m.role === 'user') {
+              bubble.textContent = m.content;
+            } else {
+              bubble.innerHTML = marked.parse(m.content);
+            }
+            container.appendChild(row);
+          }
+          scrollBottom();
+        }
+      } catch (err) {
+        console.warn('Failed to load messages:', err);
+        renderWelcomeState();
+      }
+    }
+
+    async function deleteConversation(id) {
+      try {
+        await fetch(`/api/conversations/${id}`, { method: 'DELETE' });
+        if (activeConversationId === id) {
+          activeConversationId = null;
+          resetChatArea();
+        }
+        loadConversations();
+      } catch (err) {
+        console.warn('Failed to delete conversation:', err);
+      }
+    }
+
+    function resetChatArea() {
+      messageHistory = [];
+      const container = document.getElementById('chat-messages');
+      container.innerHTML = '';
+      renderWelcomeState();
+    }
+
+    function renderWelcomeState() {
+      const container = document.getElementById('chat-messages');
+      container.innerHTML = `
+        <div class="welcome-block" id="welcome-block">
+          <h1>Your research,<br>amplified.</h1>
+          <p>Ask anything about research papers in Lakebase — semantic search, notes, reading progress, and more.</p>
+          <div class="welcome-suggestions" role="list" aria-label="Suggested questions">
+            <button class="suggestion-pill" role="listitem" onclick="useSuggestion(this)">
+              Search transformer architecture papers
+            </button>
+            <button class="suggestion-pill" role="listitem" onclick="useSuggestion(this)">
+              Find papers for my Machine Learning goal
+            </button>
+            <button class="suggestion-pill" role="listitem" onclick="useSuggestion(this)">
+              Compare the top 2 papers in Lakebase
+            </button>
+            <button class="suggestion-pill" role="listitem" onclick="useSuggestion(this)">
+              What paper should I read next based on my progress?
+            </button>
+          </div>
+        </div>`;
+    }
 
     /* ── Tools Drawer Modal ───────────────────────────────────────────────── */
     let toolsData = null;
@@ -1202,10 +1784,26 @@
       let streamErrored = false;
 
       try {
+        // Ensure an active conversation ID exists
+        if (!activeConversationId) {
+          const cRes = await fetch('/api/conversations', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ user_email: currentUserEmail, title: text.slice(0, 30) + '…' })
+          });
+          const cData = await cRes.json();
+          activeConversationId = cData.conversation_id;
+          loadConversations();
+        }
+
         const resp = await fetch('/api/chat/stream', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ messages: messageHistory }),
+          body: JSON.stringify({
+            messages: messageHistory,
+            conversation_id: activeConversationId,
+            user_email: currentUserEmail
+          }),
         });
 
         if (!resp.ok) {

@@ -1,0 +1,27 @@
+command:
+  - "uvicorn"
+  - "server:app"
+  - "--host"
+  - "0.0.0.0"
+  - "--port"
+  - "8000"
+
+env:
+  - name: DATABRICKS_HOST
+    value: "https://dbc-6805aac2-7b4a.cloud.databricks.com"
+  - name: MLFLOW_TRACKING_URI
+    value: "databricks"
+  - name: MLFLOW_EXPERIMENT_ID
+    value: "1666138880873723"
+  - name: DB_HOST
+    value: "ep-withered-breeze-d8845p1k.database.us-east-2.cloud.databricks.com"
+  - name: DB_NAME
+    value: "databricks_postgres"
+  - name: DB_USER
+    value: "research-copilot-agent"
+  - name: DB_PASS
+    value: "REDACTED"
+  - name: AGENT_ENDPOINT_NAME
+    value: "databricks-meta-llama-3-3-70b-instruct"
+  - name: MCP_SERVERS_CONFIG
+    value: '{"lakebase": "https://mcp-reserach-copilot-tools-7474657332212776.aws.databricksapps.com/mcp"}'

@@ -1,0 +1,17 @@
+command:
+  - "python"
+  - "server.py"
+
+env:
+  - name: DATABRICKS_HOST
+    value: "https://dbc-6805aac2-7b4a.cloud.databricks.com"
+  - name: DATABRICKS_TOKEN
+    value: "REDACTED"
+  - name: DB_HOST
+    value: "ep-withered-breeze-d8845p1k.database.us-east-2.cloud.databricks.com"
+  - name: DB_NAME
+    value: "databricks_postgres"
+  - name: DB_USER
+    value: "research-copilot-agent"
+  - name: DB_PASS
+    value: "REDACTED"

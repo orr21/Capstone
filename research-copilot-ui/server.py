@@ -1,0 +1,430 @@
+import os
+import sys
+import json
+import logging
+import asyncio
+import httpx
+import pg8000.dbapi
+from fastapi import FastAPI, Request, HTTPException
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse, StreamingResponse
+from pydantic import BaseModel
+from typing import List, Dict, Any
+from openai import OpenAI
+from fastmcp import Client as FastMCPClient
+from databricks.sdk import WorkspaceClient
+import mlflow
+from mlflow.entities import SpanType
+
+logging.basicConfig(stream=sys.stderr, level=logging.INFO)
+logger = logging.getLogger("ui_backend")
+
+
+def _init_mlflow():
+    """Configure MLflow GenAI tracing for the agent flow.
+
+    On Databricks Apps this logs traces to the configured experiment (default
+    /Shared/research-copilot-tracing). Any failure only disables tracing; it
+    never blocks the app from serving.
+    """
+    try:
+        mlflow.set_tracking_uri(os.environ.get("MLFLOW_TRACKING_URI", "databricks"))
+        experiment_id = os.environ.get("MLFLOW_EXPERIMENT_ID")
+        if experiment_id:
+            mlflow.set_experiment(experiment_id=experiment_id)
+            experiment_name = f"experiment_id={experiment_id}"
+        else:
+            experiment_name = os.environ.get(
+                "MLFLOW_EXPERIMENT_NAME", "/Shared/research-copilot-tracing"
+            )
+            mlflow.set_experiment(experiment_name)
+        # Trace the OpenAI (Databricks serving endpoint) LLM calls as nested spans.
+        mlflow.openai.autolog()
+        logger.info("MLflow tracing enabled for experiment '%s'", experiment_name)
+    except Exception as e:
+        logger.warning("MLflow init failed, continuing without tracing: %s", e)
+
+
+_init_mlflow()
+
+app = FastAPI(title="Research Copilot Streaming Portal")
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+static_dir = os.path.join(BASE_DIR, "static")
+if not os.path.exists(static_dir):
+    os.makedirs(static_dir, exist_ok=True)
+app.mount("/static", StaticFiles(directory=static_dir), name="static")
+
+# Configuration
+DB_HOST = os.environ.get("DB_HOST", "ep-withered-breeze-d8845p1k.database.us-east-2.cloud.databricks.com")
+DB_NAME = os.environ.get("DB_NAME", "databricks_postgres")
+DB_USER = os.environ.get("DB_USER", "research-copilot-agent")
+DB_PASS = os.environ.get("DB_PASS", "REDACTED")
+ENDPOINT_NAME = os.environ.get("AGENT_ENDPOINT_NAME", "databricks-meta-llama-3-3-70b-instruct")
+
+DEFAULT_MCP_CONFIG = {
+    "lakebase": os.environ.get("MCP_SERVER_URL", "https://mcp-reserach-copilot-tools-7474657332212776.aws.databricksapps.com/mcp")
+}
+MCP_SERVERS: Dict[str, str] = json.loads(os.environ.get("MCP_SERVERS_CONFIG", json.dumps(DEFAULT_MCP_CONFIG)))
+
+_w = None
+_openai_client = None
+
+def get_workspace_client():
+    global _w
+    if _w is None:
+        _w = WorkspaceClient()
+    return _w
+
+def get_openai_client():
+    global _openai_client
+    if _openai_client is None:
+        w = get_workspace_client()
+        headers = w.config.authenticate()
+        token = headers.get("Authorization", "").replace("Bearer ", "")
+        host = w.config.host.rstrip("/")
+        _openai_client = OpenAI(api_key=token, base_url=f"{host}/serving-endpoints")
+    return _openai_client
+
+class _BearerAuth(httpx.Auth):
+    """httpx auth that uses WorkspaceClient to get a fresh OAuth M2M token.
+
+    When running inside a Databricks App the platform injects
+    DATABRICKS_CLIENT_ID and DATABRICKS_CLIENT_SECRET.  WorkspaceClient
+    picks these up automatically and performs the OAuth2 client_credentials
+    flow, returning a JWT that the Databricks Apps front-door proxy accepts.
+    """
+
+    def __init__(self):
+        self._ws = None
+
+    def _get_token(self) -> str:
+        if self._ws is None:
+            self._ws = WorkspaceClient()
+        headers = self._ws.config.authenticate()
+        return headers.get("Authorization", "").replace("Bearer ", "")
+
+    def auth_flow(self, request):
+        token = self._get_token()
+        request.headers["Authorization"] = f"Bearer {token}"
+        yield request
+
+
+class MultiMCPRegistry:
+    def __init__(self, servers: Dict[str, str]):
+        self.servers = servers
+        self.last_errors: List[str] = []
+        self._auth = None
+
+    def _resolve_auth(self):
+        """Return httpx auth for Databricks Apps endpoints.
+
+        Uses WorkspaceClient to obtain a fresh OAuth M2M token via the
+        auto-injected service-principal credentials.  The token is refreshed
+        automatically by the SDK on each call.
+        """
+        if self._auth is None:
+            self._auth = _BearerAuth()
+        return self._auth
+
+    async def get_all_tools(self) -> tuple[List[Dict[str, Any]], Dict[str, tuple[str, str]]]:
+        openai_tools = []
+        tool_router: Dict[str, tuple[str, str]] = {}
+        self.last_errors = []
+
+        for namespace, url in self.servers.items():
+            try:
+                async with FastMCPClient(url, auth=self._resolve_auth()) as client:
+                    tools = await client.list_tools()
+                    for tool in tools:
+                        namespaced_name = f"{namespace}_{tool.name}"
+                        tool_router[namespaced_name] = (namespace, tool.name)
+                        schema = (
+                            getattr(tool, "parameters", None)
+                            or getattr(tool, "inputSchema", None)
+                            or {"type": "object", "properties": {}}
+                        )
+                        openai_tools.append({
+                            "type": "function",
+                            "function": {
+                                "name": namespaced_name,
+                                "description": f"[{namespace.upper()}] {tool.description or ''}",
+                                "parameters": schema
+                            }
+                        })
+            except Exception as e:
+                msg = f"{namespace} ({url}): {e}"
+                self.last_errors.append(msg)
+                logger.error("Failed to load MCP server: %s", msg)
+
+        return openai_tools, tool_router
+
+    async def call_tool(self, namespaced_name: str, args: dict, tool_router: Dict[str, tuple[str, str]]) -> str:
+        if namespaced_name not in tool_router:
+            raise ValueError(f"Unknown tool: {namespaced_name}")
+
+        namespace, original_tool_name = tool_router[namespaced_name]
+        url = self.servers[namespace]
+
+        async with FastMCPClient(url, auth=self._resolve_auth()) as client:
+            result = await client.call_tool(original_tool_name, args)
+            return str(result)
+
+mcp_registry = MultiMCPRegistry(MCP_SERVERS)
+
+class ChatMessage(BaseModel):
+    role: str
+    content: str
+
+class ChatRequest(BaseModel):
+    messages: List[ChatMessage]
+
+@app.get("/")
+def read_root():
+    index_path = os.path.join(static_dir, "index.html")
+    if os.path.exists(index_path):
+        return FileResponse(index_path)
+    raise HTTPException(status_code=404, detail="index.html not found")
+
+@app.get("/api/config")
+def read_config():
+    return {"model": ENDPOINT_NAME, "mcp_servers": list(MCP_SERVERS.keys())}
+
+@app.post("/api/chat/stream")
+async def chat_stream_endpoint(req: ChatRequest, request: Request):
+    user_email = request.headers.get("x-forwarded-user", "demo_user@workspace.com")
+    openai_client = get_openai_client()
+
+    messages_payload = [
+        {
+            "role": "system",
+            "content": (
+                f"You are Research Copilot assisting {user_email}. "
+                "You have access to tools defined in the 'tools' parameter of this request. "
+                "To retrieve database metrics, papers, notes, or reading progress, call the "
+                "appropriate function using its EXACT name and arguments from the 'tools' list. "
+                "Do not invent tool names or arguments. Wait for the function result, then answer "
+                "using that data. Never claim to have called a tool you did not actually call, "
+                "and never output text like 'tool_call' in your reply."
+            )
+        }
+    ]
+    for m in req.messages:
+        messages_payload.append({"role": m.role, "content": m.content})
+
+    agent = run_agent(user_email, messages_payload, openai_client)
+    return StreamingResponse(_sse_encoder(agent), media_type="text/event-stream")
+
+
+def _aggregate_agent_events(events):
+    """Collapse streamed SSE events into a single span output for MLflow.
+
+    Captures: final answer text, each tool call with its name/args/output,
+    and any error messages. Returned dict is stored as the AGENT span output
+    in the MLflow trace UI.
+    """
+    content_parts = []
+    tool_calls = []
+    tool_starts = {}  # name -> args, so we can join with tool_end
+    errors = []
+    for ev in events:
+        etype = ev.get("type")
+        if etype == "chunk":
+            content_parts.append(ev.get("content", ""))
+        elif etype == "tool_start":
+            tool_starts[ev.get("name", "")] = ev.get("args", {})
+        elif etype == "tool_end":
+            name = ev.get("name", "")
+            tool_calls.append({
+                "name": name,
+                "inputs": tool_starts.get(name, {}),
+                "output": ev.get("output"),
+            })
+        elif etype == "error":
+            errors.append(ev.get("content"))
+    return {
+        "final_answer": "".join(content_parts),
+        "tool_calls": tool_calls,
+        "errors": errors,
+        "status": "error" if errors else "ok",
+    }
+
+
+async def _sse_encoder(events):
+    async for event in events:
+        yield f"data: {json.dumps(event)}\n\n"
+
+
+@mlflow.trace(
+    name="research_copilot_agent",
+    span_type=SpanType.AGENT,
+    output_reducer=_aggregate_agent_events,
+)
+async def run_agent(user_email: str, messages_payload: list, openai_client: OpenAI):
+    """Orchestrate the chat agent: MCP tool discovery, LLM call, tool calls, synthesis.
+
+    The whole flow is one MLflow AGENT trace; each MCP tool invocation is a nested
+    TOOL span and each LLM call (auto-traced by mlflow.openai.autolog) is a nested
+    CHAT_MODEL span. Yields SSE event dicts.
+    """
+    last_user_msg = messages_payload[-1]["content"] if messages_payload else ""
+    mlflow.update_current_trace(
+        tags={"user": user_email, "app": "research-copilot-ui", "model": ENDPOINT_NAME},
+        request_preview=f"Q: {last_user_msg[:200]}",
+    )
+
+    try:
+        yield {"type": "status", "content": "Discovering MCP tools..."}
+        openai_tools, tool_router = await mcp_registry.get_all_tools()
+
+        span = mlflow.get_current_active_span()
+        if span is not None:
+            span.set_attributes({
+                "mcp_tools_loaded": [t["function"]["name"] for t in openai_tools],
+                "mcp_tools_count": len(openai_tools),
+            })
+
+        if openai_tools:
+            tool_names = [t["function"]["name"] for t in openai_tools]
+            messages_payload[0]["content"] = (
+                messages_payload[0]["content"]
+                + "\n\nAvailable tools (use only these exact names): " + ", ".join(tool_names)
+            )
+
+        if not openai_tools:
+            detail = "; ".join(mcp_registry.last_errors) or "no MCP servers configured"
+            logger.error("No MCP tools available, skipping model call: %s", detail)
+            yield {
+                "type": "error",
+                "content": "Could not connect to the research database tools.",
+                "detail": detail,
+                "hint": (
+                    "The MCP server app is unreachable or is blocking this app. In Databricks, "
+                    "open the MCP server app → Settings → Authentication → set it to 'Open access', "
+                    "then redeploy this app."
+                ),
+            }
+            yield {"type": "done"}
+            return
+
+        yield {"type": "status", "content": "Querying model..."}
+
+        response = openai_client.chat.completions.create(
+            model=ENDPOINT_NAME,
+            messages=messages_payload,
+            tools=openai_tools if openai_tools else None,
+            tool_choice="auto" if openai_tools else None,
+            stream=False
+        )
+
+        message = response.choices[0].message
+        assistant_content = message.content or ""
+
+        tool_calls_data = {}
+        if message.tool_calls:
+            for idx, tc in enumerate(message.tool_calls):
+                tool_calls_data[idx] = {
+                    "id": tc.id,
+                    "name": tc.function.name or "",
+                    "args": tc.function.arguments or "",
+                }
+
+        emitted = list(tool_calls_data.values())
+        if span is not None:
+            span.set_attributes({
+                "llm_emitted_tool_calls": [t["name"] for t in emitted],
+                "llm_tool_calls_count": len(emitted),
+            })
+        if openai_tools and not emitted:
+            logger.warning(
+                "Tools were provided to the model but it did not emit any tool calls; "
+                "it may fabricate a tool-like answer instead."
+            )
+
+        if not emitted:
+            if assistant_content:
+                yield {"type": "chunk", "content": assistant_content}
+            yield {"type": "done"}
+            return
+
+        messages_payload.append({
+            "role": "assistant",
+            "content": assistant_content or None,
+            "tool_calls": [
+                {
+                    "id": t["id"],
+                    "type": "function",
+                    "function": {"name": t["name"], "arguments": t["args"]}
+                } for t in tool_calls_data.values()
+            ]
+        })
+
+        by_original = {orig: ns_name for ns_name, (ns, orig) in tool_router.items()}
+        for t in tool_calls_data.values():
+            tool_name = t["name"]
+            tool_args = json.loads(t["args"] or "{}")
+
+            resolved = tool_name
+            if resolved not in tool_router and tool_name in by_original:
+                resolved = by_original[tool_name]
+                logger.info("Resolved tool call '%s' -> '%s'", tool_name, resolved)
+            if resolved not in tool_router:
+                logger.error("Model called unknown tool '%s'", tool_name)
+                raise ValueError(f"Unknown tool: {tool_name}")
+
+            _, original_tool_name = tool_router[resolved]
+
+            yield {"type": "tool_start", "name": resolved, "args": tool_args}
+
+            with mlflow.start_span(
+                name=f"tool_{original_tool_name}",
+                span_type=SpanType.TOOL,
+            ) as tool_span:
+                # Register inputs BEFORE calling so MLflow captures them
+                # even if the tool raises an exception.
+                tool_span.set_inputs({
+                    "tool_name": resolved,
+                    "original_tool_name": original_tool_name,
+                    "arguments": tool_args,
+                })
+                try:
+                    tool_output = await mcp_registry.call_tool(resolved, tool_args, tool_router)
+                    tool_span.set_outputs({"output": tool_output, "status": "success"})
+                except Exception as tool_err:
+                    error_msg = str(tool_err)
+                    tool_span.set_outputs({"error": error_msg, "status": "error"})
+                    logger.exception("Tool '%s' raised an exception", resolved)
+                    raise
+
+            yield {"type": "tool_end", "name": resolved, "output": tool_output}
+
+            messages_payload.append({
+                "role": "tool",
+                "tool_call_id": t["id"],
+                "name": tool_name,
+                "content": tool_output
+            })
+
+        yield {"type": "status", "content": "Synthesizing final answer..."}
+
+        final_stream = openai_client.chat.completions.create(
+            model=ENDPOINT_NAME,
+            messages=messages_payload,
+            stream=True
+        )
+
+        for chunk in final_stream:
+            delta = chunk.choices[0].delta if chunk.choices else None
+            if delta and delta.content:
+                yield {"type": "chunk", "content": delta.content}
+
+        yield {"type": "done"}
+
+    except Exception as e:
+        logger.exception("Stream execution error")
+        yield {
+            "type": "error",
+            "content": "Something went wrong while answering.",
+            "detail": str(e),
+            "hint": "Retry, and check the app logs for the full traceback.",
+        }

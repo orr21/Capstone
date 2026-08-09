@@ -556,7 +556,7 @@ def submit_quiz_answers(user_id: str, paper_id: str, score_percent: int) -> dict
     try:
         cursor = conn.cursor()
         if passed:
-            prog_id = f"prog_{user_id}_{paper_id[:10]}"
+            prog_id = f"prog_{uuid.uuid4().hex[:12]}"
             cursor.execute(
                 """
                 INSERT INTO reading_progress (progress_id, user_id, paper_id, status)
@@ -748,7 +748,7 @@ def update_reading_progress(user_id: str, paper_id: str, status: str) -> dict:
     conn = get_db_conn()
     try:
         cursor = conn.cursor()
-        progress_id = f"prog_{user_id}_{paper_id[:10]}"
+        progress_id = f"prog_{uuid.uuid4().hex[:12]}"
         sql = """
             INSERT INTO reading_progress (progress_id, user_id, paper_id, status)
             VALUES (%s, %s, %s, %s)

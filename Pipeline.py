@@ -45,8 +45,10 @@ PER_PAGE = 200  # Max per page in OpenAlex API
 MAX_TOTAL = int(os.environ.get("INGEST_MAX_TOTAL", "1000")) if os.environ.get("INGEST_MAX_TOTAL") else None
 REQUEST_DELAY = 0.1  # Polite pool allows up to 10 req/sec
 
+BATCH_WRITE_SIZE = int(os.environ.get("INGEST_BATCH_SIZE", "1000"))
+
 # ---------------------------------------------------------------------------
-# Helpers
+# Helpers & Database Checkpointing
 # ---------------------------------------------------------------------------
 
 def get_db_connection():
@@ -59,6 +61,21 @@ def get_db_connection():
         password=DB_PASS,
         sslmode="require"
     )
+
+
+def get_existing_paper_ids() -> set:
+    """Fetch existing paper IDs from Lakebase to resume ingestion without duplicate work."""
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT paper_id FROM papers")
+            rows = cur.fetchall()
+            return {r[0] for r in rows}
+    except Exception as e:
+        print(f"  Warning fetching existing papers: {e}")
+        return set()
+    finally:
+        conn.close()
 
 
 def reconstruct_abstract(inverted_index: dict) -> str:
@@ -75,20 +92,13 @@ def reconstruct_abstract(inverted_index: dict) -> str:
 
 
 def build_filter_clause(topic, start_date: str, end_date: str, only_oa: bool = True) -> str:
-    """
-    Build OpenAlex filter query string.
-    - `is_oa:true`: Filters strictly for freely available online Open Access papers.
-    - `from_publication_date` / `to_publication_date`: Date range window.
-    - `default.search`: Topic keyword (optional).
-    """
+    """Build OpenAlex filter query string."""
     filters = [
         f"from_publication_date:{start_date}",
         f"to_publication_date:{end_date}"
     ]
-    
     if only_oa:
         filters.append("is_oa:true")
-        
     if topic:
         filters.append(f"default.search:{topic}")
 
@@ -96,12 +106,7 @@ def build_filter_clause(topic, start_date: str, end_date: str, only_oa: bool = T
 
 
 def fetch_openalex_page(filter_clause: str, cursor: str = "*", per_page: int = 200) -> dict:
-    """
-    OpenAlex Bulk REST API Fetching Optimization:
-    1. `select=...`: Requests ONLY the fields we need. Shrinks response size by ~85%.
-    2. `cursor=...`: Cursor pagination allows fetching millions of works without hitting page limits.
-    3. `mailto=...`: Puts request into OpenAlex 'Polite Pool' for higher rate limits (10 req/s).
-    """
+    """OpenAlex Bulk REST API Fetching Optimization."""
     select_fields = "id,doi,title,abstract_inverted_index,publication_year,cited_by_count,open_access"
     
     url = (
@@ -134,44 +139,6 @@ def fetch_openalex_page(filter_clause: str, cursor: str = "*", per_page: int = 2
     return {}
 
 
-def fetch_all_papers(topic, start_date: str, end_date: str, max_total=None) -> list:
-    """Bulk-fetch papers from OpenAlex using cursor-based pagination."""
-    label = f'"{topic}"' if topic else "all topics"
-    print(f"\nFetching papers for {label} ({start_date} -> {end_date}, Open Access only={ONLY_OPEN_ACCESS})...")
-
-    filter_clause = build_filter_clause(topic, start_date, end_date, only_oa=ONLY_OPEN_ACCESS)
-    papers = []
-    cursor = "*"
-    page_count = 0
-
-    while cursor:
-        data = fetch_openalex_page(filter_clause, cursor=cursor, per_page=PER_PAGE)
-        batch = data.get("results", [])
-        total_available = data.get("meta", {}).get("count", 0)
-        next_cursor = data.get("meta", {}).get("next_cursor")
-
-        if not batch:
-            break
-
-        papers.extend(batch)
-        page_count += 1
-        print(f"  Batch {page_count}: fetched {len(batch)} (total: {len(papers)} / {total_available})")
-
-        if max_total and len(papers) >= max_total:
-            papers = papers[:max_total]
-            print(f"  Reached MAX_TOTAL limit ({max_total}). Stopping.")
-            break
-
-        if not next_cursor or next_cursor == cursor:
-            break
-
-        cursor = next_cursor
-        time.sleep(REQUEST_DELAY)
-
-    print(f"  Collected {len(papers)} papers for {label}.")
-    return papers
-
-
 def parse_papers(raw_papers: list, topic_label) -> list:
     """Flatten raw OpenAlex JSON into tuples for PostgreSQL ingestion."""
     records = []
@@ -189,14 +156,9 @@ def parse_papers(raw_papers: list, topic_label) -> list:
     return records
 
 
-# ---------------------------------------------------------------------------
-# Ingestion Steps
-# ---------------------------------------------------------------------------
-
 def ingest_papers(parsed_records: list):
     """Upsert paper metadata into PostgreSQL `papers` table."""
     if not parsed_records:
-        print("  No records to insert.")
         return
 
     insert_sql = """
@@ -219,7 +181,6 @@ def ingest_papers(parsed_records: list):
         with conn.cursor() as cur:
             execute_values(cur, insert_sql, parsed_records, page_size=100)
         conn.commit()
-        print(f"  Upserted {len(parsed_records)} papers into `papers`.")
     finally:
         conn.close()
 
@@ -227,7 +188,6 @@ def ingest_papers(parsed_records: list):
 def embed_and_store(parsed_records: list, model: SentenceTransformer):
     """Generate embeddings and upsert into PostgreSQL `paper_embeddings` table."""
     if not parsed_records:
-        print("  No records to embed.")
         return
 
     texts = [
@@ -235,8 +195,7 @@ def embed_and_store(parsed_records: list, model: SentenceTransformer):
         for r in parsed_records
     ]
 
-    print(f"  Computing embeddings for {len(texts)} papers...")
-    embeddings = model.encode(texts, show_progress_bar=True, batch_size=64)
+    embeddings = model.encode(texts, show_progress_bar=False, batch_size=64)
 
     vector_records = [
         (
@@ -267,36 +226,98 @@ def embed_and_store(parsed_records: list, model: SentenceTransformer):
         with conn.cursor() as cur:
             execute_values(cur, insert_vector_sql, vector_records, template=template, page_size=100)
         conn.commit()
-        print(f"  Upserted {len(vector_records)} embeddings into `paper_embeddings`.")
     finally:
         conn.close()
 
 
-# ---------------------------------------------------------------------------
-# Main Execution
-# ---------------------------------------------------------------------------
-
-print("=" * 60)
-print("Daily Incremental Ingestion Pipeline")
-print(f"  Window      : {START_DATE} -> {END_DATE} (Last {LOOKBACK_DAYS} days)")
-print(f"  Open Access : {ONLY_OPEN_ACCESS}")
-print(f"  Topics      : {TOPICS if TOPICS else 'ALL (no keyword restriction)'}")
-print(f"  Max total   : {MAX_TOTAL or 'unlimited'}")
-print("=" * 60)
-
-print(f"\nLoading embedding model '{MODEL_NAME}'...")
-embed_model = SentenceTransformer(MODEL_NAME)
-
-jobs = TOPICS if TOPICS else [None]
-all_parsed = []
-
-for topic in jobs:
-    raw = fetch_all_papers(topic, START_DATE, END_DATE, max_total=MAX_TOTAL)
-    parsed = parse_papers(raw, topic_label=topic)
-
+def process_batch(raw_batch: list, topic_label, embed_model: SentenceTransformer) -> int:
+    """Parse, ingest into PostgreSQL, compute embeddings, and commit a batch of papers immediately."""
+    parsed = parse_papers(raw_batch, topic_label)
+    if not parsed:
+        return 0
     ingest_papers(parsed)
     embed_and_store(parsed, embed_model)
+    return len(parsed)
 
-    all_parsed.extend(parsed)
 
-print(f"\nPipeline complete! Total papers processed: {len(all_parsed)}")
+# ---------------------------------------------------------------------------
+# Streaming Ingestion Loop with Incremental Checkpointing
+# ---------------------------------------------------------------------------
+
+def run_incremental_pipeline():
+    print("=" * 60)
+    print("Daily Incremental Ingestion Pipeline (Streaming Checkpoints)")
+    print(f"  Window      : {START_DATE} -> {END_DATE} (Last {LOOKBACK_DAYS} days)")
+    print(f"  Open Access : {ONLY_OPEN_ACCESS}")
+    print(f"  Batch Size  : {BATCH_WRITE_SIZE} papers / checkpoint")
+    print(f"  Topics      : {TOPICS if TOPICS else 'ALL (no keyword restriction)'}")
+    print(f"  Max total   : {MAX_TOTAL or 'unlimited'}")
+    print("=" * 60)
+
+    print("\nLoading existing paper IDs from Lakebase for resume capability...")
+    existing_pids = get_existing_paper_ids()
+    print(f"  Found {len(existing_pids)} papers already committed in Lakebase.")
+
+    print(f"\nLoading embedding model '{MODEL_NAME}'...")
+    embed_model = SentenceTransformer(MODEL_NAME)
+
+    jobs = TOPICS if TOPICS else [None]
+    total_processed_session = 0
+
+    for topic in jobs:
+        label = f'"{topic}"' if topic else "all topics"
+        print(f"\nStreaming ingestion for {label}...")
+
+        filter_clause = build_filter_clause(topic, START_DATE, END_DATE, only_oa=ONLY_OPEN_ACCESS)
+        cursor = "*"
+        page_count = 0
+        current_batch = []
+
+        while cursor:
+            data = fetch_openalex_page(filter_clause, cursor=cursor, per_page=PER_PAGE)
+            page_results = data.get("results", [])
+            total_available = data.get("meta", {}).get("count", 0)
+            next_cursor = data.get("meta", {}).get("next_cursor")
+
+            if not page_results:
+                break
+
+            # Filter out papers already committed to Lakebase
+            new_papers = [p for p in page_results if str(p.get("id")) not in existing_pids]
+            current_batch.extend(new_papers)
+            page_count += 1
+            
+            # Track newly seen paper IDs to avoid intra-run duplicates
+            for p in new_papers:
+                existing_pids.add(str(p.get("id")))
+
+            print(f"  Page {page_count}: {len(page_results)} fetched, {len(new_papers)} new (Pending batch: {len(current_batch)} / {BATCH_WRITE_SIZE})")
+
+            # Immediately ingest & embed when batch reaches threshold
+            if len(current_batch) >= BATCH_WRITE_SIZE:
+                num_written = process_batch(current_batch, topic, embed_model)
+                total_processed_session += num_written
+                print(f"  💾 CHECKPOINT COMMITTED: {num_written} papers ingested & embedded! (Session total: {total_processed_session})")
+                current_batch = []
+
+            if MAX_TOTAL and total_processed_session >= MAX_TOTAL:
+                print(f"  Reached MAX_TOTAL limit ({MAX_TOTAL}). Stopping.")
+                break
+
+            if not next_cursor or next_cursor == cursor:
+                break
+
+            cursor = next_cursor
+            time.sleep(REQUEST_DELAY)
+
+        # Process any remaining papers in final batch for this topic
+        if current_batch:
+            num_written = process_batch(current_batch, topic, embed_model)
+            total_processed_session += num_written
+            print(f"  💾 FINAL TOPIC CHECKPOINT COMMITTED: {num_written} papers!")
+
+    print(f"\nPipeline Execution Complete! Total new papers ingested & embedded: {total_processed_session}")
+
+
+if __name__ == "__main__":
+    run_incremental_pipeline()

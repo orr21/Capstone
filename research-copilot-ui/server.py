@@ -23,33 +23,19 @@ logger = logging.getLogger("ui_backend")
 def _init_mlflow():
     """Configure MLflow GenAI tracing for the agent flow.
 
-    On Databricks Apps this logs traces to the configured experiment.
+    On Databricks Apps MLFLOW_EXPERIMENT_ID is auto-injected as an env var.
     Any failure only disables tracing; it never blocks the app from serving.
     """
     try:
         mlflow.set_tracking_uri(os.environ.get("MLFLOW_TRACKING_URI", "databricks"))
         experiment_id = os.environ.get("MLFLOW_EXPERIMENT_ID")
-        experiment_name = os.environ.get("MLFLOW_EXPERIMENT_NAME", "/Shared/research-copilot-tracing")
-        
-        success = False
         if experiment_id:
-            try:
-                mlflow.set_experiment(experiment_id=experiment_id)
-                logger.info("MLflow tracing enabled for experiment_id='%s'", experiment_id)
-                success = True
-            except Exception as exp_err:
-                logger.warning("Could not set experiment by ID '%s' (%s), trying name fallback...", experiment_id, exp_err)
-        
-        if not success:
-            try:
-                mlflow.set_experiment(experiment_name)
-                logger.info("MLflow tracing enabled for experiment_name='%s'", experiment_name)
-                success = True
-            except Exception as name_err:
-                logger.warning("Could not set experiment by name '%s': %s", experiment_name, name_err)
-
-        if success:
-            mlflow.openai.autolog()
+            mlflow.set_experiment(experiment_id=experiment_id)
+            logger.info("MLflow tracing enabled for experiment_id='%s'", experiment_id)
+        else:
+            logger.warning("MLFLOW_EXPERIMENT_ID not set — traces will not be saved")
+            return
+        mlflow.openai.autolog()
     except Exception as e:
         logger.warning("MLflow init failed, continuing without tracing: %s", e)
 
@@ -249,7 +235,10 @@ async def chat_stream_endpoint(req: ChatRequest, request: Request):
             messages_payload.append({"role": m.role, "content": m.content})
 
         agent = run_agent(user_email, messages_payload, openai_client, bearer_token)
-        return StreamingResponse(_sse_encoder(agent), media_type="text/event-stream")
+        return StreamingResponse(
+            _sse_encoder_with_run(agent, user_email, messages_payload[-1]["content"] if messages_payload else ""),
+            media_type="text/event-stream",
+        )
     except Exception as e:
         logger.exception("Failed to initialize chat stream")
         async def _error_stream():
@@ -297,32 +286,52 @@ def _aggregate_agent_events(events):
     }
 
 
-async def _sse_encoder(events):
-    async for event in events:
-        yield f"data: {json.dumps(event)}\n\n"
+async def _sse_encoder_with_run(events, user_email: str = "", last_user_msg: str = ""):
+    """Wrap the agent generator in an explicit MLflow run so traces are committed.
+
+    Using mlflow.start_run() ensures each request creates a real run entry in
+    the experiment, even though run_agent is an async generator (which @mlflow.trace
+    cannot reliably commit for generators).
+    """
+    collected: list = []
+    try:
+        with mlflow.start_run(run_name=f"copilot_{user_email[:20]}") as _run:
+            try:
+                mlflow.set_tags({
+                    "user": user_email,
+                    "app": "research-copilot-ui",
+                    "model": ENDPOINT_NAME,
+                })
+            except Exception:
+                pass
+            with mlflow.start_span(
+                name="research_copilot_agent",
+                span_type=SpanType.AGENT,
+            ) as agent_span:
+                try:
+                    agent_span.set_inputs({"user": user_email, "question": last_user_msg[:500]})
+                except Exception:
+                    pass
+                async for event in events:
+                    collected.append(event)
+                    yield f"data: {json.dumps(event)}\n\n"
+                try:
+                    agent_span.set_outputs(_aggregate_agent_events(collected))
+                except Exception:
+                    pass
+    except Exception:
+        # If MLflow setup fails, still stream events without tracing
+        async for event in events:
+            yield f"data: {json.dumps(event)}\n\n"
 
 
-@mlflow.trace(
-    name="research_copilot_agent",
-    span_type=SpanType.AGENT,
-    output_reducer=_aggregate_agent_events,
-)
+
 async def run_agent(user_email: str, messages_payload: list, openai_client: OpenAI, bearer_token: str = ""):
     """Orchestrate the chat agent: MCP tool discovery, LLM call, tool calls, synthesis.
 
-    The whole flow is one MLflow AGENT trace; each MCP tool invocation is a nested
-    TOOL span and each LLM call (auto-traced by mlflow.openai.autolog) is a nested
-    CHAT_MODEL span. Yields SSE event dicts.
+    Yields SSE event dicts. MLflow tracing is handled by the caller (_sse_encoder_with_run)
+    via an explicit mlflow.start_run() so runs are reliably committed to the experiment.
     """
-    last_user_msg = messages_payload[-1]["content"] if messages_payload else ""
-    try:
-        mlflow.update_current_trace(
-            tags={"user": user_email, "app": "research-copilot-ui", "model": ENDPOINT_NAME},
-            request_preview=f"Q: {last_user_msg[:200]}",
-        )
-    except Exception:
-        pass  # tracing is optional; never block the stream
-
     try:
         yield {"type": "status", "content": "Discovering MCP tools..."}
         openai_tools, tool_router = await mcp_registry.get_all_tools(bearer_token=bearer_token)

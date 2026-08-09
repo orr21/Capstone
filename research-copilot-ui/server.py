@@ -1,5 +1,6 @@
 import os
 import sys
+import re
 import json
 import logging
 import asyncio
@@ -11,9 +12,10 @@ from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 import uuid
 from typing import List, Dict, Any, Optional
-from openai import OpenAI
 from fastmcp import Client as FastMCPClient
 from databricks.sdk import WorkspaceClient
+from langchain_core.messages import SystemMessage, HumanMessage, AIMessage, ToolMessage
+from langchain_openai import ChatOpenAI
 import mlflow
 from mlflow.entities import SpanType
 
@@ -64,7 +66,6 @@ DEFAULT_MCP_CONFIG = {
 MCP_SERVERS: Dict[str, str] = json.loads(os.environ.get("MCP_SERVERS_CONFIG", json.dumps(DEFAULT_MCP_CONFIG)))
 
 _w = None
-_openai_client = None
 
 def get_workspace_client():
     global _w
@@ -72,12 +73,17 @@ def get_workspace_client():
         _w = WorkspaceClient()
     return _w
 
-def get_openai_client():
+def _get_databricks_chat_model() -> ChatOpenAI:
+    """Build a LangChain ChatOpenAI pointed at the Databricks model serving endpoint."""
     w = get_workspace_client()
     headers = w.config.authenticate()
     token = headers.get("Authorization", "").replace("Bearer ", "")
     host = w.config.host.rstrip("/")
-    return OpenAI(api_key=token, base_url=f"{host}/serving-endpoints")
+    return ChatOpenAI(
+        model=ENDPOINT_NAME,
+        base_url=f"{host}/serving-endpoints",
+        api_key=token,
+    )
 
 def _resolve_bearer_token(forwarded_token: str = "") -> str:
     """Resolve the best available bearer token for calling other Databricks Apps.
@@ -746,7 +752,8 @@ async def chat_stream_endpoint(req: ChatRequest, request: Request):
         if not bearer_token:
             logger.warning("No bearer token resolved; MCP calls will likely fail with 401")
 
-        openai_client = get_openai_client()
+        llm = _get_databricks_chat_model()
+        openai_tools, tool_router = await mcp_registry.get_all_tools(bearer_token=bearer_token)
 
         last_user_text = req.messages[-1].content if req.messages else ""
         if conversation_id and last_user_text:
@@ -789,7 +796,7 @@ async def chat_stream_endpoint(req: ChatRequest, request: Request):
         for m in req.messages:
             messages_payload.append({"role": m.role, "content": m.content})
 
-        agent = run_agent(user_email, messages_payload, openai_client, bearer_token)
+        agent = run_agent(user_email, messages_payload, llm, openai_tools, tool_router, bearer_token)
         return StreamingResponse(
             _sse_encoder_with_run(agent, user_email, last_user_text, conversation_id),
             media_type="text/event-stream",
@@ -907,16 +914,75 @@ async def _sse_encoder_with_run(events, user_email: str = "", last_user_msg: str
 
 
 
-async def run_agent(user_email: str, messages_payload: list, openai_client: OpenAI, bearer_token: str = ""):
-    """Orchestrate the chat agent: MCP tool discovery, LLM call, tool calls, synthesis.
+async def run_agent(user_email: str, messages_payload: list, llm, openai_tools, tool_router, bearer_token: str = ""):
+    """LangChain-powered agent loop with native tool calling and SSE streaming.
 
-    Yields SSE event dicts. MLflow tracing is handled by the caller (_sse_encoder_with_run)
-    via a single root mlflow.start_span() per request, so all LLM and tool spans nest inside
-    one trace per session.
+    `llm` is a LangChain ChatOpenAI pointed at the Databricks serving endpoint. Tools are
+    bound once via `bind_tools`, and each `AIMessage.tool_calls` round is executed through the
+    existing MCP registry. Yields the same SSE event dicts the frontend already understands.
     """
+    def _to_lc_messages(msgs):
+        out = []
+        for m in msgs:
+            r = m.get("role")
+            if r == "system":
+                out.append(SystemMessage(content=m.get("content") or ""))
+            elif r == "user":
+                out.append(HumanMessage(content=m.get("content") or ""))
+            elif r == "assistant":
+                content = m.get("content") or ""
+                tcs = m.get("tool_calls")
+                if tcs:
+                    lc_tcs = []
+                    for tc in tcs:
+                        fn = tc.get("function") or {}
+                        name = fn.get("name") or tc.get("name")
+                        ar = fn.get("arguments") or tc.get("args")
+                        args = json.loads(ar) if isinstance(ar, str) else (ar or {})
+                        lc_tcs.append({"id": tc.get("id"), "name": name, "args": args, "type": "tool_call"})
+                    out.append(AIMessage(content=content, tool_calls=lc_tcs))
+                else:
+                    out.append(AIMessage(content=content))
+            elif r == "tool":
+                out.append(ToolMessage(
+                    content=str(m.get("content") or ""),
+                    tool_call_id=m.get("tool_call_id"),
+                    name=m.get("name") or "",
+                ))
+        return out
+
+    def _str_content(msg):
+        c = msg.content
+        if isinstance(c, str):
+            return c
+        if isinstance(c, list):
+            return "".join(p if isinstance(p, str) else (p.get("text", "") if isinstance(p, dict) else "") for p in c)
+        return str(c or "")
+
+    def _parse_text_calls(content, turn_idx):
+        if not content or "<function=" not in content:
+            return [], content
+        matches = re.findall(r'<function=([a-zA-Z0-9_.-]+)>\s*(\{.*?\})', content, re.DOTALL)
+        calls = []
+        for idx, (n, a) in enumerate(matches):
+            try:
+                args = json.loads(a)
+            except Exception:
+                args = {}
+            calls.append({"id": f"text_call_{turn_idx}_{idx}", "name": n, "args": args, "type": "tool_call"})
+        cleaned = re.sub(r'<function=[a-zA-Z0-9_.-]+>\s*\{.*?\}', "", content, flags=re.DOTALL).strip()
+        return calls, cleaned
+
+    def _stream_chunks(chat_model, lc_messages):
+        for chunk in chat_model.stream(lc_messages):
+            piece = getattr(chunk, "content", "")
+            if isinstance(piece, list):
+                piece = "".join(p if isinstance(p, str) else (p.get("text", "") if isinstance(p, dict) else "") for p in piece)
+            if piece:
+                yield {"type": "chunk", "content": piece}
+
     try:
         yield {"type": "status", "content": "Discovering MCP tools..."}
-        openai_tools, tool_router = await mcp_registry.get_all_tools(bearer_token=bearer_token)
 
         span = mlflow.get_current_active_span()
         if span is not None:
@@ -927,13 +993,6 @@ async def run_agent(user_email: str, messages_payload: list, openai_client: Open
                 })
             except Exception:
                 pass
-
-        if openai_tools:
-            tool_names = [t["function"]["name"] for t in openai_tools]
-            messages_payload[0]["content"] = (
-                messages_payload[0]["content"]
-                + "\n\nAvailable tools (use only these exact names): " + ", ".join(tool_names)
-            )
 
         if not openai_tools:
             detail = "; ".join(mcp_registry.last_errors) or "no MCP servers configured"
@@ -951,6 +1010,7 @@ async def run_agent(user_email: str, messages_payload: list, openai_client: Open
             yield {"type": "done"}
             return
 
+        llm_with_tools = llm.bind_tools(openai_tools)
         max_turns = 5
         turn = 0
 
@@ -958,93 +1018,71 @@ async def run_agent(user_email: str, messages_payload: list, openai_client: Open
             turn += 1
             yield {"type": "status", "content": f"Reasoning (step {turn})..."}
 
-            response = openai_client.chat.completions.create(
-                model=ENDPOINT_NAME,
-                messages=messages_payload,
-                tools=openai_tools if openai_tools else None,
-                tool_choice="auto" if openai_tools else None,
-                stream=False
-            )
-
-            message = response.choices[0].message
-            assistant_content = message.content or ""
-            
-            tool_calls_list = []
-            if message.tool_calls:
-                for tc in message.tool_calls:
-                    tool_calls_list.append({
-                        "id": tc.id,
-                        "name": tc.function.name or "",
-                        "args": tc.function.arguments or "{}"
-                    })
-            elif assistant_content and "<function=" in assistant_content:
-                matches = re.findall(r'<function=([a-zA-Z0-9_.-]+)>\s*(\{.*?\})', assistant_content, re.DOTALL)
-                if matches:
-                    for idx, (fn_name, fn_args_str) in enumerate(matches):
-                        tool_calls_list.append({
-                            "id": f"text_call_{turn}_{idx}",
-                            "name": fn_name,
-                            "args": fn_args_str
-                        })
-                    # Strip raw function syntax from assistant content
-                    assistant_content = re.sub(r'<function=[a-zA-Z0-9_.-]+>\s*\{.*?\}', '', assistant_content, flags=re.DOTALL).strip()
-
-            # If no tool calls emitted, we stream the final answer and finish
-            if not tool_calls_list:
-                yield {"type": "status", "content": "Synthesizing final answer..."}
-                if assistant_content:
-                    yield {"type": "chunk", "content": assistant_content}
-                else:
-                    final_stream = openai_client.chat.completions.create(
-                        model=ENDPOINT_NAME,
-                        messages=messages_payload,
-                        stream=True
-                    )
-                    for chunk in final_stream:
-                        delta = chunk.choices[0].delta if chunk.choices else None
-                        if delta and delta.content:
-                            yield {"type": "chunk", "content": delta.content}
-                
+            lc_messages = _to_lc_messages(messages_payload)
+            try:
+                response = llm_with_tools.invoke(lc_messages)
+            except Exception as llm_err:
+                logger.exception("LLM invoke failed")
+                yield {
+                    "type": "error",
+                    "content": "The model call failed.",
+                    "detail": str(llm_err),
+                    "hint": "Retry, and check the app logs for the full traceback.",
+                }
                 yield {"type": "done"}
                 return
 
-            # Append assistant message with tool calls to history
+            content = _str_content(response)
+            raw_tool_calls = response.tool_calls or []
+            tool_calls = [{"id": tc["id"], "name": tc["name"], "args": tc.get("args", {})} for tc in raw_tool_calls] if raw_tool_calls else []
+
+            if not tool_calls:
+                tool_calls, content = _parse_text_calls(content, turn)
+
+            if not tool_calls:
+                yield {"type": "status", "content": "Synthesizing final answer..."}
+                if content:
+                    yield {"type": "chunk", "content": content}
+                else:
+                    for ev in _stream_chunks(llm, lc_messages):
+                        yield ev
+                yield {"type": "done"}
+                return
+
+            # Persist assistant turn in OpenAI-dict history (for persistence in DB / future turns)
             messages_payload.append({
                 "role": "assistant",
-                "content": assistant_content or None,
+                "content": content or None,
                 "tool_calls": [
                     {
-                        "id": t["id"],
+                        "id": tc["id"],
                         "type": "function",
-                        "function": {"name": t["name"], "arguments": t["args"]}
-                    } for t in tool_calls_list
-                ]
+                        "function": {"name": tc["name"], "arguments": json.dumps(tc["args"])},
+                    }
+                    for tc in tool_calls
+                ],
             })
 
             by_original = {orig: ns_name for ns_name, (ns, orig) in tool_router.items()}
-
             turn_tool_results = []
 
-            for tc in tool_calls_list:
-                tool_name = tc["name"]
-                raw_args = tc["args"] or "{}"
-                try:
-                    tool_args = json.loads(raw_args)
-                except Exception:
-                    tool_args = {}
+            for tc in tool_calls:
+                tc_id = tc["id"]
+                tc_name = tc["name"]
+                tc_args = tc.get("args") or {}
 
-                resolved = tool_name
-                if resolved not in tool_router and tool_name in by_original:
-                    resolved = by_original[tool_name]
+                resolved = tc_name
+                if resolved not in tool_router and tc_name in by_original:
+                    resolved = by_original[tc_name]
                 if resolved not in tool_router:
-                    logger.error("Model called unknown tool '%s'", tool_name)
-                    original_tool_name = tool_name
-                    tool_output = json.dumps({"status": "error", "message": f"Unknown tool: {tool_name}"})
+                    logger.error("Model called unknown tool '%s'", tc_name)
+                    original_tool_name = tc_name
+                    tool_output = json.dumps({"status": "error", "message": f"Unknown tool: {tc_name}"})
                 else:
                     _, original_tool_name = tool_router[resolved]
-                    _validate_tool_call_guardrails(original_tool_name, tool_args)
+                    _validate_tool_call_guardrails(original_tool_name, tc_args)
 
-                    yield {"type": "tool_start", "name": resolved, "args": tool_args}
+                    yield {"type": "tool_start", "name": resolved, "args": tc_args}
 
                     is_retriever = any(k in original_tool_name.lower() for k in ["search", "find", "recommend", "compare"])
                     span_type_val = SpanType.RETRIEVER if is_retriever else SpanType.TOOL
@@ -1056,11 +1094,11 @@ async def run_agent(user_email: str, messages_payload: list, openai_client: Open
                         tool_span.set_inputs({
                             "tool_name": resolved,
                             "original_tool_name": original_tool_name,
-                            "arguments": tool_args,
+                            "arguments": tc_args,
                         })
                         try:
                             tool_output = await mcp_registry.call_tool(
-                                resolved, tool_args, tool_router, bearer_token=bearer_token
+                                resolved, tc_args, tool_router, bearer_token=bearer_token
                             )
                             tool_span.set_outputs({"output": tool_output, "status": "success"})
                         except Exception as tool_err:
@@ -1071,36 +1109,24 @@ async def run_agent(user_email: str, messages_payload: list, openai_client: Open
                     yield {"type": "tool_end", "name": resolved, "output": tool_output}
 
                 turn_tool_results.append((original_tool_name, tool_output))
-
                 messages_payload.append({
                     "role": "tool",
-                    "tool_call_id": tc["id"],
-                    "name": tool_name,
-                    "content": str(tool_output)
+                    "tool_call_id": tc_id,
+                    "name": tc_name,
+                    "content": str(tool_output),
                 })
 
-            # Orchestrator recovery: if a tool hit an error/dead-end, nudge the model to
-            # correct course before the next LLM call instead of letting it stop or loop.
             recovery = _recovery_nudge(turn_tool_results)
             if recovery:
                 yield {"type": "status", "content": "Recovering from a failed tool call..."}
-                messages_payload.append({
-                    "role": "user",
-                    "content": recovery,
-                })
+                messages_payload.append({"role": "user", "content": recovery})
 
-        # If we exhausted max_turns while calling tools, force one final synthesis call
-        # (tools disabled) so the user always receives an answer instead of nothing.
+        # Exhausted turns: force a streamed final synthesis so the user always gets an answer.
         yield {"type": "status", "content": "Synthesizing final answer..."}
         try:
-            final_response = openai_client.chat.completions.create(
-                model=ENDPOINT_NAME,
-                messages=messages_payload,
-                stream=False
-            )
-            final_text = (final_response.choices[0].message.content or "").strip()
-            if final_text:
-                yield {"type": "chunk", "content": final_text}
+            lc_messages = _to_lc_messages(messages_payload)
+            for ev in _stream_chunks(llm, lc_messages):
+                yield ev
         except Exception as final_err:
             logger.exception("Final synthesis call failed")
             yield {
@@ -1109,7 +1135,6 @@ async def run_agent(user_email: str, messages_payload: list, openai_client: Open
                 "detail": str(final_err),
                 "hint": "Retry, and check the app logs for the full traceback.",
             }
-
         yield {"type": "done"}
 
     except Exception as e:

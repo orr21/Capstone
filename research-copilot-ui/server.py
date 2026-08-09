@@ -23,24 +23,33 @@ logger = logging.getLogger("ui_backend")
 def _init_mlflow():
     """Configure MLflow GenAI tracing for the agent flow.
 
-    On Databricks Apps this logs traces to the configured experiment (default
-    /Shared/research-copilot-tracing). Any failure only disables tracing; it
-    never blocks the app from serving.
+    On Databricks Apps this logs traces to the configured experiment.
+    Any failure only disables tracing; it never blocks the app from serving.
     """
     try:
         mlflow.set_tracking_uri(os.environ.get("MLFLOW_TRACKING_URI", "databricks"))
         experiment_id = os.environ.get("MLFLOW_EXPERIMENT_ID")
+        experiment_name = os.environ.get("MLFLOW_EXPERIMENT_NAME", "/Shared/research-copilot-tracing")
+        
+        success = False
         if experiment_id:
-            mlflow.set_experiment(experiment_id=experiment_id)
-            experiment_name = f"experiment_id={experiment_id}"
-        else:
-            experiment_name = os.environ.get(
-                "MLFLOW_EXPERIMENT_NAME", "/Shared/research-copilot-tracing"
-            )
-            mlflow.set_experiment(experiment_name)
-        # Trace the OpenAI (Databricks serving endpoint) LLM calls as nested spans.
-        mlflow.openai.autolog()
-        logger.info("MLflow tracing enabled for experiment '%s'", experiment_name)
+            try:
+                mlflow.set_experiment(experiment_id=experiment_id)
+                logger.info("MLflow tracing enabled for experiment_id='%s'", experiment_id)
+                success = True
+            except Exception as exp_err:
+                logger.warning("Could not set experiment by ID '%s' (%s), trying name fallback...", experiment_id, exp_err)
+        
+        if not success:
+            try:
+                mlflow.set_experiment(experiment_name)
+                logger.info("MLflow tracing enabled for experiment_name='%s'", experiment_name)
+                success = True
+            except Exception as name_err:
+                logger.warning("Could not set experiment by name '%s': %s", experiment_name, name_err)
+
+        if success:
+            mlflow.openai.autolog()
     except Exception as e:
         logger.warning("MLflow init failed, continuing without tracing: %s", e)
 

@@ -483,9 +483,12 @@ async def run_agent(user_email: str, messages_payload: list, openai_client: Open
 
             yield {"type": "tool_start", "name": resolved, "args": tool_args}
 
+            is_retriever = any(k in original_tool_name.lower() for k in ["search", "find", "recommend", "compare"])
+            span_type_val = SpanType.RETRIEVER if is_retriever else SpanType.TOOL
+
             with mlflow.start_span(
                 name=f"tool_{original_tool_name}",
-                span_type=SpanType.TOOL,
+                span_type=span_type_val,
             ) as tool_span:
                 tool_span.set_inputs({
                     "tool_name": resolved,

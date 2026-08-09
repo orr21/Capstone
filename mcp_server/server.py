@@ -296,17 +296,50 @@ def summarize_and_compare_papers(paper_ids: List[str]) -> str:
         return f"Error comparing papers: {str(e)}"
 
 @mcp.tool
-def generate_sequenced_reading_plan(user_id: str, goal_id: str, plan_title: str, paper_ids: List[str]) -> dict:
+def generate_sequenced_reading_plan(user_id: str, goal_id: str = "", plan_title: str = "Sequenced Reading Plan", paper_ids: List[str] = []) -> dict:
     """
     Generates and saves a structured, sequenced reading plan for a student's learning goal.
+    If paper_ids is empty, automatically retrieves and sequences top relevant papers from Lakebase.
     """
-    if not paper_ids:
-        return {"status": "error", "message": "paper_ids list cannot be empty."}
-
-    plan_id = f"plan_{uuid.uuid4().hex[:12]}"
     conn = get_db_conn()
     try:
         cursor = conn.cursor()
+        
+        # If paper_ids is empty, automatically query matching papers from Lakebase
+        if not paper_ids:
+            search_query = "research"
+            if goal_id:
+                cursor.execute(
+                    "SELECT title, description FROM learning_goals WHERE goal_id = %s OR user_id = %s LIMIT 1",
+                    (goal_id, user_id)
+                )
+                g_row = cursor.fetchone()
+                if g_row:
+                    search_query = f"{g_row[0]} {g_row[1] or ''}"
+            
+            model = get_embed_model()
+            q_vec = '{' + ','.join(str(float(x)) for x in model.encode([search_query])[0]) + '}'
+            cursor.execute(
+                """
+                SELECT p.paper_id FROM paper_embeddings pe
+                JOIN papers p ON pe.paper_id = p.paper_id
+                ORDER BY pe.embedding <=> %s::double precision[]::vector ASC
+                LIMIT 5
+                """,
+                (q_vec,)
+            )
+            p_rows = cursor.fetchall()
+            paper_ids = [r[0] for r in p_rows]
+            
+            # Fallback if paper_embeddings table is empty
+            if not paper_ids:
+                cursor.execute("SELECT paper_id FROM papers LIMIT 5")
+                paper_ids = [r[0] for r in cursor.fetchall()]
+
+        if not paper_ids:
+            return {"status": "error", "message": "No research papers found in Lakebase to create a reading plan."}
+
+        plan_id = f"plan_{uuid.uuid4().hex[:12]}"
         sql = """
             INSERT INTO reading_plans (plan_id, user_id, goal_id, title, sequenced_paper_ids, status)
             VALUES (%s, %s, %s, %s, %s::jsonb, 'ACTIVE')
@@ -314,7 +347,7 @@ def generate_sequenced_reading_plan(user_id: str, goal_id: str, plan_title: str,
         cursor.execute(sql, (plan_id, user_id, goal_id or None, plan_title, json.dumps(paper_ids)))
         conn.commit()
         
-        # Optionally set reading status of first paper to READING and rest to TO_READ
+        # Set reading status of first paper to READING and rest to TO_READ
         for idx, pid in enumerate(paper_ids):
             st = 'READING' if idx == 0 else 'TO_READ'
             prog_id = f"prog_{user_id}_{pid[:10]}"

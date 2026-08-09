@@ -189,6 +189,222 @@
       border: 1px solid var(--hairline);
     }
 
+    /* ── Tools trigger & modal ──────────────────────────────────────────────── */
+    .tools-trigger-btn {
+      background: var(--surface-card);
+      color: var(--ink);
+      font-size: 13px;
+      font-weight: 500;
+      border-radius: var(--r-pill);
+      padding: 4px 12px;
+      border: 1px solid var(--hairline-strong);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.15s ease;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+    }
+
+    .tools-trigger-btn:hover {
+      border-color: var(--ink);
+      background: var(--surface-strong);
+      transform: translateY(-1px);
+    }
+
+    .tools-count-badge {
+      background: var(--ink);
+      color: var(--on-primary);
+      font-size: 11px;
+      font-weight: 600;
+      border-radius: var(--r-pill);
+      padding: 1px 6px;
+      line-height: 1.2;
+    }
+
+    .tools-modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(12, 10, 9, 0.35);
+      backdrop-filter: blur(4px);
+      z-index: 900;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.25s ease;
+      display: flex;
+      justify-content: flex-end;
+    }
+
+    .tools-modal-backdrop.active {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .tools-modal {
+      width: 100%;
+      max-width: 540px;
+      height: 100%;
+      background: var(--canvas-soft);
+      border-left: 1px solid var(--hairline-strong);
+      box-shadow: -8px 0 32px rgba(0,0,0,0.1);
+      display: flex;
+      flex-direction: column;
+      transform: translateX(100%);
+      transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    .tools-modal-backdrop.active .tools-modal {
+      transform: translateX(0);
+    }
+
+    .tools-modal-header {
+      padding: var(--sp-lg);
+      border-bottom: 1px solid var(--hairline);
+      background: var(--surface-card);
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: var(--sp-base);
+    }
+
+    .tools-modal-header h2 {
+      font-family: var(--font-display);
+      font-size: 24px;
+      font-weight: 300;
+      color: var(--ink);
+      margin-bottom: 2px;
+    }
+
+    .tools-modal-header p {
+      font-size: 13px;
+      color: var(--muted);
+    }
+
+    .modal-close-btn {
+      background: var(--surface-strong);
+      border: 1px solid var(--hairline);
+      border-radius: 50%;
+      width: 28px; height: 28px;
+      font-size: 16px;
+      line-height: 1;
+      color: var(--muted);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.15s ease;
+    }
+
+    .modal-close-btn:hover {
+      color: var(--ink);
+      border-color: var(--ink);
+    }
+
+    .tools-modal-body {
+      flex: 1;
+      overflow-y: auto;
+      padding: var(--sp-lg);
+      display: flex;
+      flex-direction: column;
+      gap: var(--sp-xl);
+    }
+
+    .tools-namespace-section {
+      display: flex;
+      flex-direction: column;
+      gap: var(--sp-md);
+    }
+
+    .namespace-badge-header {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 0.8px;
+      text-transform: uppercase;
+      color: var(--ink-secondary);
+      background: var(--surface-strong);
+      padding: 4px 10px;
+      border-radius: var(--r-sm);
+      border: 1px solid var(--hairline);
+      align-self: flex-start;
+    }
+
+    .tool-category-group {
+      display: flex;
+      flex-direction: column;
+      gap: var(--sp-xs);
+    }
+
+    .tool-category-title {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--muted);
+      letter-spacing: 0.4px;
+      text-transform: uppercase;
+      margin-bottom: var(--sp-xxs);
+    }
+
+    .tool-card {
+      background: var(--surface-card);
+      border: 1px solid var(--hairline);
+      border-radius: var(--r-lg);
+      padding: var(--sp-base);
+      display: flex;
+      flex-direction: column;
+      gap: var(--sp-xs);
+      box-shadow: 0 2px 8px rgba(0,0,0,0.02);
+      transition: border-color 0.15s, box-shadow 0.15s;
+    }
+
+    .tool-card:hover {
+      border-color: var(--hairline-strong);
+      box-shadow: 0 4px 14px rgba(0,0,0,0.05);
+    }
+
+    .tool-card-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--sp-xs);
+    }
+
+    .tool-card-title {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--ink);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .tool-card-desc {
+      font-size: 13px;
+      color: var(--body);
+      line-height: 1.45;
+    }
+
+    .tool-try-btn {
+      align-self: flex-start;
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--muted);
+      background: var(--surface-strong);
+      border: 1px solid var(--hairline);
+      border-radius: var(--r-pill);
+      padding: 3px 10px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      margin-top: 2px;
+    }
+
+    .tool-try-btn:hover {
+      color: var(--ink);
+      border-color: var(--ink);
+      background: var(--surface-card);
+    }
+
     .status-dot {
       display: flex;
       align-items: center;
@@ -620,6 +836,10 @@
     </a>
 
     <div class="nav-right">
+      <button class="tools-trigger-btn" onclick="toggleToolsModal(true)" aria-label="View available tools">
+        <span>🛠️ Tools</span>
+        <span class="tools-count-badge" id="tools-count">...</span>
+      </button>
       <div class="status-dot" id="status-indicator" aria-live="polite">
         <div class="dot"></div>
         <span id="status-label">Live</span>
@@ -627,6 +847,23 @@
       <div class="badge-pill" id="model-badge" aria-label="Active model">Model</div>
     </div>
   </nav>
+
+  <!-- Tools Drawer Modal -->
+  <div class="tools-modal-backdrop" id="tools-modal-backdrop" onclick="toggleToolsModal(false)">
+    <div class="tools-modal" onclick="event.stopPropagation()">
+      <div class="tools-modal-header">
+        <div>
+          <h2>Available Capabilities</h2>
+          <p>Tools connected via FastMCP microservices on Databricks Lakebase</p>
+        </div>
+        <button class="modal-close-btn" onclick="toggleToolsModal(false)" aria-label="Close modal">×</button>
+      </div>
+
+      <div class="tools-modal-body" id="tools-modal-body">
+        <div class="status-line"><span class="status-pulse"></span> Fetching MCP tools…</div>
+      </div>
+    </div>
+  </div>
 
   <!-- Main content -->
   <main role="main" aria-label="Research Copilot chat">
@@ -709,10 +946,105 @@
         }
       } catch (_) { /* keep default */ }
 
+      // Fetch tools list
+      loadTools();
+
       // Auto-resize textarea on every input
       const input = document.getElementById('chat-input');
       input.addEventListener('input', () => autoResize(input));
     });
+
+    /* ── Tools Drawer Modal ───────────────────────────────────────────────── */
+    let toolsData = null;
+
+    async function loadTools() {
+      try {
+        const res = await fetch('/api/tools');
+        toolsData = await res.json();
+        const countBadge = document.getElementById('tools-count');
+        if (countBadge && toolsData.total_tools !== undefined) {
+          countBadge.textContent = toolsData.total_tools;
+        }
+        renderToolsModal();
+      } catch (err) {
+        console.warn('Failed to fetch tools:', err);
+      }
+    }
+
+    function toggleToolsModal(show) {
+      const backdrop = document.getElementById('tools-modal-backdrop');
+      if (!backdrop) return;
+      if (show === undefined) {
+        backdrop.classList.toggle('active');
+      } else if (show) {
+        backdrop.classList.add('active');
+      } else {
+        backdrop.classList.remove('active');
+      }
+    }
+
+    function renderToolsModal() {
+      const container = document.getElementById('tools-modal-body');
+      if (!container || !toolsData || !toolsData.mcp_servers) return;
+
+      let html = '';
+      const servers = toolsData.mcp_servers;
+
+      for (const [ns, categories] of Object.entries(servers)) {
+        html += `<div class="tools-namespace-section">`;
+        html += `<div class="namespace-badge-header">⚡ MCP Server: ${escHtml(ns)}</div>`;
+
+        for (const [catName, toolsList] of Object.entries(categories)) {
+          html += `<div class="tool-category-group">`;
+          html += `<div class="tool-category-title">${escHtml(catName)}</div>`;
+
+          for (const t of toolsList) {
+            const promptText = getSamplePrompt(t.original_name);
+            html += `
+              <div class="tool-card">
+                <div class="tool-card-head">
+                  <div class="tool-card-title">
+                    <span>${t.icon || '🛠️'}</span>
+                    <span>${escHtml(t.original_name)}</span>
+                  </div>
+                </div>
+                <div class="tool-card-desc">${escHtml(t.description)}</div>
+                ${promptText ? `<button class="tool-try-btn" onclick="promptTool('${escHtml(promptText)}')">Use this capability →</button>` : ''}
+              </div>`;
+          }
+
+          html += `</div>`;
+        }
+
+        html += `</div>`;
+      }
+
+      container.innerHTML = html;
+    }
+
+    function getSamplePrompt(origName) {
+      const samples = {
+        'search_research_papers': 'Search transformer architecture papers',
+        'find_papers_for_goal': 'Find papers for my Machine Learning goal',
+        'summarize_and_compare_papers': 'Compare the top 2 papers in Lakebase',
+        'generate_sequenced_reading_plan': 'Generate a 3-step reading plan for deep learning',
+        'track_progress_and_recommend': 'What paper should I read next based on my progress?',
+        'save_paper_note': 'Save a note on paper paper_1: Great breakdown of attention mechanisms',
+        'update_reading_progress': 'Mark paper_1 as COMPLETED',
+        'add_paper_to_collection': 'Add paper_1 to my Transformers collection'
+      };
+      return samples[origName] || '';
+    }
+
+    function promptTool(text) {
+      toggleToolsModal(false);
+      const input = document.getElementById('chat-input');
+      if (input) {
+        input.value = text;
+        autoResize(input);
+        input.focus();
+      }
+    }
 
     /* ── Textarea auto-resize ────────────────────────────────────────────── */
     function autoResize(el) {

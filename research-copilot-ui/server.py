@@ -198,9 +198,51 @@ def read_root():
         return FileResponse(index_path)
     raise HTTPException(status_code=404, detail="index.html not found")
 
+TOOL_CATEGORIES = {
+    "search_research_papers": ("Search & Retrieval", "🔍", "Perform semantic vector search across research papers in Lakebase."),
+    "find_papers_for_goal": ("Search & Retrieval", "🎯", "Match papers to student learning goals and retrieve relevant context."),
+    "summarize_and_compare_papers": ("Analysis & Comparison", "⚖️", "Fetch raw abstracts and user notes to compare 2+ papers."),
+    "count_papers": ("Analysis & Comparison", "🔢", "Count research papers matching keywords or publication year."),
+    "generate_sequenced_reading_plan": ("Planning & Progress", "🗺️", "Generate and save a sequenced reading plan for a learning goal."),
+    "track_progress_and_recommend": ("Planning & Progress", "💡", "Track reading progress and recommend the next logical paper."),
+    "save_paper_note": ("Notes & Collections", "📝", "Save personal research notes or summaries for a paper."),
+    "update_reading_progress": ("Notes & Collections", "📌", "Update paper reading status (TO_READ, READING, COMPLETED)."),
+    "add_paper_to_collection": ("Notes & Collections", "📂", "Add papers to curated user collections.")
+}
+
 @app.get("/api/config")
 def read_config():
     return {"model": ENDPOINT_NAME, "mcp_servers": list(MCP_SERVERS.keys())}
+
+@app.get("/api/tools")
+async def read_tools(request: Request):
+    forwarded_token = request.headers.get("x-forwarded-access-token", "")
+    bearer_token = _resolve_bearer_token(forwarded_token)
+    
+    openai_tools, tool_router = await mcp_registry.get_all_tools(bearer_token=bearer_token)
+    
+    grouped = {}
+    for t in openai_tools:
+        ns_name = t["function"]["name"]
+        ns, orig_name = tool_router.get(ns_name, ("lakebase", ns_name))
+        cat, icon, desc = TOOL_CATEGORIES.get(
+            orig_name, ("General Tools", "🛠️", t["function"].get("description", ""))
+        )
+        
+        if ns not in grouped:
+            grouped[ns] = {}
+        if cat not in grouped[ns]:
+            grouped[ns][cat] = []
+            
+        grouped[ns][cat].append({
+            "namespaced_name": ns_name,
+            "original_name": orig_name,
+            "description": desc,
+            "icon": icon,
+            "parameters": t["function"].get("parameters", {})
+        })
+        
+    return {"mcp_servers": grouped, "total_tools": len(openai_tools)}
 
 @app.post("/api/chat/stream")
 async def chat_stream_endpoint(req: ChatRequest, request: Request):

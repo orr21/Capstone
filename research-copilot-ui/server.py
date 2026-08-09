@@ -9,7 +9,8 @@ from fastapi import FastAPI, Request, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
-from typing import List, Dict, Any
+import uuid
+from typing import List, Dict, Any, Optional
 from openai import OpenAI
 from fastmcp import Client as FastMCPClient
 from databricks.sdk import WorkspaceClient

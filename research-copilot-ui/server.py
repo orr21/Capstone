@@ -826,7 +826,26 @@ async def run_agent(user_email: str, messages_payload: list, openai_client: Open
 
             message = response.choices[0].message
             assistant_content = message.content or ""
-            tool_calls_list = message.tool_calls or []
+            
+            tool_calls_list = []
+            if message.tool_calls:
+                for tc in message.tool_calls:
+                    tool_calls_list.append({
+                        "id": tc.id,
+                        "name": tc.function.name or "",
+                        "args": tc.function.arguments or "{}"
+                    })
+            elif assistant_content and "<function=" in assistant_content:
+                matches = re.findall(r'<function=([a-zA-Z0-9_.-]+)>\s*(\{.*?\})', assistant_content, re.DOTALL)
+                if matches:
+                    for idx, (fn_name, fn_args_str) in enumerate(matches):
+                        tool_calls_list.append({
+                            "id": f"text_call_{turn}_{idx}",
+                            "name": fn_name,
+                            "args": fn_args_str
+                        })
+                    # Strip raw function syntax from assistant content
+                    assistant_content = re.sub(r'<function=[a-zA-Z0-9_.-]+>\s*\{.*?\}', '', assistant_content, flags=re.DOTALL).strip()
 
             # If no tool calls emitted, we stream the final answer and finish
             if not tool_calls_list:
@@ -848,12 +867,23 @@ async def run_agent(user_email: str, messages_payload: list, openai_client: Open
                 return
 
             # Append assistant message with tool calls to history
-            messages_payload.append(message)
+            messages_payload.append({
+                "role": "assistant",
+                "content": assistant_content or None,
+                "tool_calls": [
+                    {
+                        "id": t["id"],
+                        "type": "function",
+                        "function": {"name": t["name"], "arguments": t["args"]}
+                    } for t in tool_calls_list
+                ]
+            })
+
             by_original = {orig: ns_name for ns_name, (ns, orig) in tool_router.items()}
 
             for tc in tool_calls_list:
-                tool_name = tc.function.name
-                raw_args = tc.function.arguments or "{}"
+                tool_name = tc["name"]
+                raw_args = tc["args"] or "{}"
                 try:
                     tool_args = json.loads(raw_args)
                 except Exception:
@@ -897,7 +927,7 @@ async def run_agent(user_email: str, messages_payload: list, openai_client: Open
 
                 messages_payload.append({
                     "role": "tool",
-                    "tool_call_id": tc.id,
+                    "tool_call_id": tc["id"],
                     "name": tool_name,
                     "content": str(tool_output)
                 })

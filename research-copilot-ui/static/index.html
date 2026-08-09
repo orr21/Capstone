@@ -520,16 +520,6 @@
       color: var(--on-primary);
     }
 
-    .mastered-badge-tag {
-      background: #dcfce7;
-      color: #166534;
-      border: 1px solid rgba(22, 163, 74, 0.3);
-      font-size: 11px;
-      font-weight: 600;
-      padding: 3px 8px;
-      border-radius: var(--r-pill);
-    }
-
     /* ── Tools trigger & modal ──────────────────────────────────────────────── */
     .tools-trigger-btn {
       background: var(--surface-card);
@@ -1089,7 +1079,7 @@
       color: var(--ink);
     }
 
-    /* ── Interactive Citation Badges & Quizzes ───────────────────────────── */
+    /* ── Interactive Citation Badges ───────────────────────────────────────── */
     .paper-citation-tag {
       display: inline-flex;
       align-items: center;
@@ -1113,59 +1103,6 @@
       color: var(--on-primary);
       border-color: var(--ink);
       transform: translateY(-1px);
-    }
-
-    .quiz-card {
-      background: var(--surface-card);
-      border: 1px solid var(--hairline-strong);
-      border-radius: var(--r-lg);
-      padding: var(--sp-md);
-      margin-top: var(--sp-sm);
-      display: flex;
-      flex-direction: column;
-      gap: var(--sp-sm);
-    }
-
-    .quiz-title {
-      font-size: 14px;
-      font-weight: 600;
-      color: var(--ink);
-    }
-
-    .quiz-question-block {
-      background: var(--canvas);
-      border: 1px solid var(--hairline);
-      border-radius: var(--r-md);
-      padding: 8px var(--sp-sm);
-    }
-
-    .quiz-q-text {
-      font-size: 13px;
-      font-weight: 500;
-      color: var(--ink);
-      margin-bottom: 6px;
-    }
-
-    .quiz-option-label {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      font-size: 12px;
-      color: var(--ink-secondary);
-      cursor: pointer;
-      padding: 3px 0;
-    }
-
-    .quiz-submit-btn {
-      align-self: flex-start;
-      background: var(--ink);
-      color: var(--on-primary);
-      border: none;
-      border-radius: var(--r-pill);
-      padding: 6px 14px;
-      font-size: 12px;
-      font-weight: 600;
-      cursor: pointer;
     }
 
     .sidebar {
@@ -2081,14 +2018,14 @@
         </div>
 
         <div class="kanban-column">
-          <div class="kanban-col-header">Reading</div>
+          <div class="kanban-col-header">Currently Reading</div>
           <div id="kanban-reading" class="kanban-col-list">
             <div class="inspector-empty">No papers</div>
           </div>
         </div>
 
         <div class="kanban-column">
-          <div class="kanban-col-header">Completed</div>
+          <div class="kanban-col-header">Read</div>
           <div id="kanban-completed" class="kanban-col-list">
             <div class="inspector-empty">No papers</div>
           </div>
@@ -2134,10 +2071,10 @@
 
           <div class="kanban-main-col">
             <div class="kanban-main-col-title">
-              <span>Mastered</span>
-              <span class="col-count-badge" id="kw-count-mastered">0</span>
+              <span>Read</span>
+              <span class="col-count-badge" id="kw-count-read">0</span>
             </div>
-            <div class="kanban-cards-wrapper" id="kw-cards-mastered">
+            <div class="kanban-cards-wrapper" id="kw-cards-read">
               <!-- Cards -->
             </div>
           </div>
@@ -2332,7 +2269,7 @@
           recContainer.innerHTML = `
             <div class="rec-paper-title">📖 [${escHtml(rec.paper_id)}] ${escHtml(rec.title)}</div>
             <div class="rec-paper-reason">Reason: ${escHtml(rec.reason)}</div>
-            <button class="rec-action-btn" onclick="promptTool('Generate a quiz for paper ${escHtml(rec.paper_id)}')">Take Quiz & Complete 🏆</button>
+            <button class="rec-action-btn" onclick="promptTool('Mark paper ${escHtml(rec.paper_id)} as COMPLETED')">Mark as Read ✓</button>
           `;
         } else {
           recContainer.innerHTML = `<div class="inspector-empty">No pending paper recommendations</div>`;
@@ -2344,28 +2281,38 @@
         const cmCol = document.getElementById('kanban-completed');
 
         if (trCol) {
-          trCol.innerHTML = (data.active_plan && data.active_plan.paper_ids && data.active_plan.paper_ids.length > 1) 
-            ? data.active_plan.paper_ids.slice(1).map(pid => `
+          const toReadPapers = (data.to_read_papers && data.to_read_papers.length)
+            ? data.to_read_papers
+            : ((data.active_plan && data.active_plan.paper_ids && data.active_plan.paper_ids.length > 1)
+                ? data.active_plan.paper_ids.slice(1).map(pid => ({ paper_id: pid, title: '' }))
+                : []);
+          trCol.innerHTML = toReadPapers.length
+            ? toReadPapers.map(ppr => `
                 <div class="kanban-paper-item">
-                  <span class="kanban-paper-id">[${escHtml(pid)}]</span>
-                  <button class="kanban-btn" onclick="promptTool('Mark paper ${escHtml(pid)} as READING')">Start Reading →</button>
+                  <span class="kanban-paper-id">[${escHtml(ppr.paper_id)}] ${escHtml(ppr.title || '')}</span>
+                  <button class="kanban-btn" onclick="promptTool('Mark paper ${escHtml(ppr.paper_id)} as READING')">Start Reading →</button>
                 </div>
               `).join('')
             : `<div class="inspector-empty">Empty</div>`;
         }
 
         if (rdCol) {
-          rdCol.innerHTML = data.recommended_paper ? `
+          const readingPapers = (data.reading_papers && data.reading_papers.length)
+            ? data.reading_papers
+            : (data.recommended_paper ? [data.recommended_paper] : []);
+          const readingPaper = readingPapers[0];
+          rdCol.innerHTML = readingPaper ? `
             <div class="kanban-paper-item">
-              <span class="kanban-paper-id">[${escHtml(data.recommended_paper.paper_id)}]</span>
-              <button class="kanban-btn" onclick="promptTool('Generate a quiz for paper ${escHtml(data.recommended_paper.paper_id)}')">Take Quiz 🏆</button>
+              <span class="kanban-paper-id">[${escHtml(readingPaper.paper_id)}] ${escHtml(readingPaper.title || '')}</span>
+              <button class="kanban-btn" onclick="promptTool('Mark paper ${escHtml(readingPaper.paper_id)} as COMPLETED')">Mark as Read ✓</button>
             </div>
           ` : `<div class="inspector-empty">Empty</div>`;
         }
 
         if (cmCol) {
-          cmCol.innerHTML = (data.stats.completed > 0)
-            ? `<div class="kanban-paper-item"><span class="kanban-paper-id">✓ ${data.stats.completed} Verified Papers</span></div>`
+          const completedPapers = data.completed_papers || [];
+          cmCol.innerHTML = completedPapers.length
+            ? completedPapers.map(ppr => `<div class="kanban-paper-item"><span class="kanban-paper-id">✓ [${escHtml(ppr.paper_id)}] ${escHtml(ppr.title || '')}</span></div>`).join('')
             : `<div class="inspector-empty">Empty</div>`;
         }
 
@@ -2417,28 +2364,30 @@
       
       const trWrapper = document.getElementById('kw-cards-to-read');
       const rdWrapper = document.getElementById('kw-cards-reading');
-      const cmWrapper = document.getElementById('kw-cards-mastered');
+      const cmWrapper = document.getElementById('kw-cards-read');
 
       const trCount = document.getElementById('kw-count-to-read');
       const rdCount = document.getElementById('kw-count-reading');
-      const cmCount = document.getElementById('kw-count-mastered');
+      const cmCount = document.getElementById('kw-count-read');
 
       if (!dash) return;
 
-      // 1. To Read cards
-      let toReadPapers = (dash.active_plan && dash.active_plan.paper_ids && dash.active_plan.paper_ids.length > 1)
-        ? dash.active_plan.paper_ids.slice(1)
-        : [];
+      // 1. To Read cards (from the active reading plan / reading_progress)
+      let toReadPapers = (dash.to_read_papers && dash.to_read_papers.length)
+        ? dash.to_read_papers
+        : ((dash.active_plan && dash.active_plan.paper_ids && dash.active_plan.paper_ids.length > 1)
+            ? dash.active_plan.paper_ids.slice(1).map(pid => ({ paper_id: pid, title: 'Paper ' + pid }))
+            : []);
       
       if (trCount) trCount.textContent = toReadPapers.length;
       if (trWrapper) {
-        trWrapper.innerHTML = toReadPapers.length ? toReadPapers.map(pid => {
-          const cleanPid = pid.replace(/^https?:\/\/openalex\.org\//, '');
+        trWrapper.innerHTML = toReadPapers.length ? toReadPapers.map(ppr => {
+          const cleanPid = (ppr.paper_id || '').replace(/^https?:\/\/openalex\.org\//, '');
           const paperUrl = cleanPid.startsWith('W') ? `https://openalex.org/${cleanPid}` : `#`;
           return `
             <div class="kanban-card-full">
               <span class="card-paper-pid">[${escHtml(cleanPid)}]</span>
-              <div class="card-paper-title">Paper ${escHtml(cleanPid)}</div>
+              <div class="card-paper-title">${escHtml(ppr.title || 'Paper ' + cleanPid)}</div>
               <div class="card-ai-actions">
                 <a href="${paperUrl}" target="_blank" rel="noopener noreferrer" class="card-action-chip" style="text-decoration:none">Read Paper ↗</a>
                 <span class="card-action-chip" onclick="promptTool('Mark paper ${escHtml(cleanPid)} as READING')">Start Reading →</span>
@@ -2449,19 +2398,22 @@
       }
 
       // 2. Currently Reading cards
-      let readingPaper = dash.recommended_paper;
-      if (rdCount) rdCount.textContent = readingPaper ? 1 : 0;
+      let readingPapers = (dash.reading_papers && dash.reading_papers.length)
+        ? dash.reading_papers
+        : (dash.recommended_paper ? [dash.recommended_paper] : []);
+      const readingPaper = readingPapers[0];
+      if (rdCount) rdCount.textContent = readingPapers.length;
       if (rdWrapper) {
         if (readingPaper) {
-          const cleanPid = readingPaper.paper_id.replace(/^https?:\/\/openalex\.org\//, '');
+          const cleanPid = (readingPaper.paper_id || '').replace(/^https?:\/\/openalex\.org\//, '');
           const paperUrl = cleanPid.startsWith('W') ? `https://openalex.org/${cleanPid}` : `#`;
           rdWrapper.innerHTML = `
             <div class="kanban-card-full">
               <span class="card-paper-pid">[${escHtml(cleanPid)}]</span>
-              <div class="card-paper-title">${escHtml(readingPaper.title)}</div>
+              <div class="card-paper-title">${escHtml(readingPaper.title || 'Paper ' + cleanPid)}</div>
               <div class="card-ai-actions">
                 <a href="${paperUrl}" target="_blank" rel="noopener noreferrer" class="card-action-chip" style="text-decoration:none">Read Paper ↗</a>
-                <span class="card-action-chip" onclick="promptTool('Generate a quiz for paper ${escHtml(cleanPid)}')">Take Quiz</span>
+                <span class="card-action-chip" onclick="promptTool('Mark paper ${escHtml(cleanPid)} as COMPLETED')">Mark as Read ✓</span>
               </div>
             </div>
           `;
@@ -2470,19 +2422,24 @@
         }
       }
 
-      // 3. Mastered cards
-      let completedCount = dash.stats.completed || 0;
-      if (cmCount) cmCount.textContent = completedCount;
+      // 3. Read cards
+      const completedPapers = dash.completed_papers || [];
+      if (cmCount) cmCount.textContent = completedPapers.length;
       if (cmWrapper) {
-        cmWrapper.innerHTML = (completedCount > 0) ? `
-          <div class="kanban-card-full">
-            <span class="mastered-badge-tag">🏆 Verified Mastered (${completedCount} Papers)</span>
-            <div class="card-paper-title">Quiz Comprehension Verified</div>
-            <div class="card-ai-actions">
-              <span class="card-action-chip" onclick="switchNavTab('chat'); promptTool('List all completed papers')">📜 View Mastered Catalog</span>
+        cmWrapper.innerHTML = completedPapers.length ? completedPapers.map(ppr => {
+          const cleanPid = (ppr.paper_id || '').replace(/^https?:\/\/openalex\.org\//, '');
+          const paperUrl = cleanPid.startsWith('W') ? `https://openalex.org/${cleanPid}` : `#`;
+          return `
+            <div class="kanban-card-full">
+              <span class="card-paper-pid">[${escHtml(cleanPid)}]</span>
+              <div class="card-paper-title">${escHtml(ppr.title || 'Paper ' + cleanPid)}</div>
+              <div class="card-ai-actions">
+                <a href="${paperUrl}" target="_blank" rel="noopener noreferrer" class="card-action-chip" style="text-decoration:none">Read Paper ↗</a>
+                <span class="card-action-chip" style="color:var(--ink-secondary)">✓ Read</span>
+              </div>
             </div>
-          </div>
-        ` : `<div class="inspector-empty">Pass paper quizzes to mark as Mastered!</div>`;
+          `;
+        }).join('') : `<div class="inspector-empty">No papers read yet</div>`;
       }
     }
 
@@ -2920,6 +2877,41 @@
       btn.textContent = shown ? 'View output' : 'Hide output';
     }
 
+    /* ── Reading Assistant sidepanel mirroring ────────────────────────────── */
+    function appendSidepanelUser(text) {
+      const c = document.getElementById('kanban-chat-messages');
+      if (!c || !text) return;
+      const uRow = document.createElement('div');
+      uRow.className = 'msg-row user';
+      uRow.innerHTML = `<div class="msg-bubble user">${escHtml(text)}</div>`;
+      c.appendChild(uRow);
+      c.scrollTop = c.scrollHeight;
+    }
+
+    function ensureSidepanelAI() {
+      const c = document.getElementById('kanban-chat-messages');
+      if (!c) return;
+      const aiBubbles = c.querySelectorAll('.msg-bubble.ai');
+      const last = aiBubbles[aiBubbles.length - 1];
+      if (last && last.dataset.pending === '1') return;
+      const aRow = document.createElement('div');
+      aRow.className = 'msg-row ai';
+      aRow.innerHTML = `<div class="msg-avatar ai">RC</div><div class="msg-bubble ai" data-pending="1"><span class="status-pulse"></span> Thinking…</div>`;
+      c.appendChild(aRow);
+      c.scrollTop = c.scrollHeight;
+    }
+
+    function setSidepanelAI(content) {
+      const c = document.getElementById('kanban-chat-messages');
+      if (!c) return;
+      const aiBubbles = c.querySelectorAll('.msg-bubble.ai');
+      const last = aiBubbles[aiBubbles.length - 1];
+      if (!last) return;
+      delete last.dataset.pending;
+      last.innerHTML = renderCitationLinks(marked.parse(content || ''));
+      c.scrollTop = c.scrollHeight;
+    }
+
     /* ── Send message ────────────────────────────────────────────────────── */
     async function sendMessage() {
       if (isStreaming) return;
@@ -2943,6 +2935,10 @@
       container.appendChild(uRow);
 
       messageHistory.push({ role: 'user', content: text });
+
+      // Mirror user message + a pending AI bubble into the Reading Assistant sidepanel
+      appendSidepanelUser(text);
+      ensureSidepanelAI();
 
       // AI bubble shell
       const { row: aRow, bubble: aBubble } = makeMsgRow('ai');
@@ -3045,10 +3041,14 @@
           }
         }
 
-        if (fullText) messageHistory.push({ role: 'assistant', content: fullText });
+        if (fullText) {
+          messageHistory.push({ role: 'assistant', content: fullText });
+          setSidepanelAI(fullText);
+        }
 
       } catch (err) {
         streamErrored = true;
+        setSidepanelAI("⚠️ Couldn't reach the agent. Please try again.");
         statusLine.innerHTML = errorCardHTML({
           content: "Couldn't reach the agent.",
           detail:  err.message || String(err),
@@ -3078,40 +3078,11 @@
       if (!text || isStreaming) return;
 
       input.value = '';
-      
-      const sidepanelContainer = document.getElementById('kanban-chat-messages');
-      if (sidepanelContainer) {
-        const uRow = document.createElement('div');
-        uRow.className = 'msg-row user';
-        uRow.innerHTML = `<div class="msg-bubble user">${escHtml(text)}</div>`;
-        sidepanelContainer.appendChild(uRow);
+      input.style.height = 'auto';
 
-        const aRow = document.createElement('div');
-        aRow.className = 'msg-row ai';
-        aRow.innerHTML = `
-          <div class="msg-avatar ai">RC</div>
-          <div class="msg-bubble ai"><span class="status-pulse"></span> Thinking…</div>
-        `;
-        sidepanelContainer.appendChild(aRow);
-        sidepanelContainer.scrollTop = sidepanelContainer.scrollHeight;
-      }
-
-      // Sync text to main chat input & trigger sendMessage
+      // Sync text to main chat input & trigger sendMessage (which mirrors to sidepanel)
       document.getElementById('chat-input').value = text;
       await sendMessage();
-
-      // Sync latest assistant message into sidepanel UI
-      if (sidepanelContainer && messageHistory.length > 0) {
-        const lastMsg = messageHistory[messageHistory.length - 1];
-        if (lastMsg.role === 'assistant') {
-          const aiBubbles = sidepanelContainer.querySelectorAll('.msg-bubble.ai');
-          if (aiBubbles.length) {
-            const lastBubble = aiBubbles[aiBubbles.length - 1];
-            lastBubble.innerHTML = renderCitationLinks(marked.parse(lastMsg.content));
-            sidepanelContainer.scrollTop = sidepanelContainer.scrollHeight;
-          }
-        }
-      }
     }
   </script>
 

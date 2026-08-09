@@ -386,6 +386,9 @@ def get_user_dashboard(user_email: str):
         completed = [r for r in prog_rows if r[2] == 'COMPLETED']
         reading = [r for r in prog_rows if r[2] == 'READING']
         to_read = [r for r in prog_rows if r[2] == 'TO_READ']
+        completed_papers = [{"paper_id": r[0], "title": r[1]} for r in completed]
+        reading_papers = [{"paper_id": r[0], "title": r[1]} for r in reading]
+        to_read_papers = [{"paper_id": r[0], "title": r[1]} for r in to_read]
 
         # 3. Next Recommended Paper
         recommended_paper = None
@@ -408,6 +411,9 @@ def get_user_dashboard(user_email: str):
             "active_goal": active_goal,
             "active_plan": active_plan,
             "recommended_paper": recommended_paper,
+            "completed_papers": completed_papers,
+            "reading_papers": reading_papers,
+            "to_read_papers": to_read_papers,
             "stats": {
                 "completed": len(completed),
                 "reading": len(reading),
@@ -422,6 +428,9 @@ def get_user_dashboard(user_email: str):
             "active_goal": None,
             "active_plan": None,
             "recommended_paper": None,
+            "completed_papers": [],
+            "reading_papers": [],
+            "to_read_papers": [],
             "stats": {"completed": 0, "reading": 0, "to_read": 0}
         }
 
@@ -714,7 +723,8 @@ async def chat_stream_endpoint(req: ChatRequest, request: Request):
                     "Always tailor your paper searches, reading plans, and recommendations to help the user achieve this active goal. "
                     "When referencing research papers in your final answer, ALWAYS include explicit citations "
                     "in the format: `[paper_id]` \"Title\" (Year) — for example `[W7172556967]` \"Learning the Pareto Frontier\" (2026). "
-                    "To confirm a paper read, encourage the user to take a 3-question quiz using `generate_paper_quiz(paper_id)`. "
+                    "Help the user move papers across their Kanban board: use `update_reading_progress` to mark "
+                    "papers as READING when they start one and as COMPLETED when they finish it. "
                     "If the user asks to create a new study plan or switch learning goals while an active reading plan exists, "
                     "ask for user confirmation before overwriting their active study plan. "
                     "Do not invent tool names or arguments. Wait for tool results, then provide a helpful synthesis."
